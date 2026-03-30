@@ -7,7 +7,7 @@ namespace CateringApi.Controllers
     [ApiController]
     public class SiteSettingsController : ControllerBase
     {
-
+       // [HttpGet]
 
 
     }
