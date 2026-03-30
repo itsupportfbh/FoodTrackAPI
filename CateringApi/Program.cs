@@ -27,6 +27,7 @@ builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
 builder.Services.AddScoped<IMealPlanRepository, MealPlanRepository>();
 builder.Services.AddScoped<IMealScanRepository, MealScanRepository>();
 builder.Services.AddScoped<IReportsRepository, ReportsRepository>();
+builder.Services.AddScoped<ICuisineRepository, CuisineRepository>();
 
 builder.Services.AddCors(options =>
 {
