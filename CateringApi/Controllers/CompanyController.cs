@@ -47,7 +47,7 @@ namespace CateringApi.Controllers
             if (!ok)
                 return BadRequest(ApiResponse<string>.Fail("Unable to delete company"));
 
-            return Ok(ApiResponse<string>.Ok(null, "Company deactivated successfully")); 
+            return Ok(ApiResponse<string>.Ok(null, "Company deactivated successfully"));  
         }
     }
 }
