@@ -19,7 +19,7 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-builder.Services.AddSingleton<DapperContext>();
+builder.Services.AddSingleton<DapperContext>(); 
 
 builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 builder.Services.AddScoped<IMealTypeRepository, MealTypeRepository>();
