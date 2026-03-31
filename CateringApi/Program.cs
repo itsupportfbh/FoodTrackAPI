@@ -1,12 +1,21 @@
 using CateringApi.Data;
 using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using Microsoft.OpenApi.Models;
 
 
+
+
+
 var builder = WebApplication.CreateBuilder(args);
 
+
+builder.Services.AddDbContext<FoodDBContext>(options =>
+{
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
+});
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -30,6 +39,8 @@ builder.Services.AddScoped<IReportsRepository, ReportsRepository>();
 builder.Services.AddScoped<ICuisineRepository, CuisineRepository>();
 builder.Services.AddScoped<ILocationRepository, LocationRepository>();
 builder.Services.AddScoped<ISessionRepository, SessionRepository>();
+builder.Services.AddScoped<ISiteSettingsRepository, SiteSettingsRepository>();
+
 
 builder.Services.AddCors(options =>
 {
