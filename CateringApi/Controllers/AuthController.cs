@@ -89,5 +89,50 @@ namespace CateringApi.Controllers
                 data = response
             });
         }
+
+
+        //[HttpPost]
+        //public async Task<IActionResult> ChangePassword(ChangePasswordDto dto)
+        //{
+        //    var result = await _authRepository.ChangePasswordAsync(dto);
+
+        //    if (!result.isSuccess)
+        //        return BadRequest(result);
+
+        //    return Ok(result);
+        //}
+
+        [HttpPost]
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
+        {
+            var result = await _authRepository.ForgotPasswordAsync(dto);
+
+            if (!result.isSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
+        {
+            var result = await _authRepository.ResetPasswordAsync(dto);
+
+            if (!result.isSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
+        {
+            var result = await _authRepository.ChangePasswordAsync(dto);
+
+            if (!result.isSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
+        }
     }
 }
