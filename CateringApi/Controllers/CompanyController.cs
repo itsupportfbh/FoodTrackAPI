@@ -28,18 +28,27 @@ namespace CateringApi.Controllers
         {
             var data = await _repository.GetByIdAsync(id);
             if (data == null)
-                return NotFound(ApiResponse<CompanyDto>.Fail("Company not found"));
+                return NotFound(ApiResponse<CompanySaveDto>.Fail("Company not found"));
 
-            return Ok(ApiResponse<CompanyDto>.Ok(data));
+            return Ok(ApiResponse<CompanySaveDto>.Ok(data));
         }
-
         [HttpPost("save")]
         public async Task<IActionResult> Save([FromBody] CompanySaveDto dto)
         {
-            var id = await _repository.SaveAsync(dto);
-            return Ok(ApiResponse<int>.Ok(id, "Company saved successfully"));
+            try
+            {
+                var id = await _repository.SaveAsync(dto);
+                return Ok(ApiResponse<int>.Ok(id, "Company saved successfully"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = ex.Message
+                });
+            }
         }
-
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> Delete(int id, [FromQuery] int? userId)
         {

@@ -43,10 +43,12 @@ ORDER BY CompanyName;";
             return await con.QueryAsync<CompanyDto>(sql);
         }
 
-        public async Task<CompanyDto?> GetByIdAsync(int id)
+        public async Task<CompanySaveDto?> GetByIdAsync(int id)
         {
-            const string sql = @"
-SELECT
+            using var con = _context.CreateConnection();
+
+            const string companySql = @"
+SELECT 
     Id,
     CompanyCode,
     CompanyName,
@@ -58,16 +60,54 @@ SELECT
     City,
     StateName,
     PostalCode,
-    IsActive,
-    CreatedBy,
-    CreatedDate,
-    UpdatedBy,
-    UpdatedDate
+    IsActive
 FROM dbo.CompanyMaster
 WHERE Id = @Id;";
 
-            using var con = _context.CreateConnection();
-            return await con.QueryFirstOrDefaultAsync<CompanyDto>(sql, new { Id = id });
+            const string userSql = @"
+SELECT TOP 1
+    Username,
+    Email
+    
+FROM dbo.UserMaster
+WHERE CompanyId = @Id
+ORDER BY Id;";
+
+            const string locationSql = @"
+SELECT LocationId
+FROM dbo.CompanyLocationMap
+WHERE CompanyId = @Id;";
+
+            const string sessionSql = @"
+SELECT SessionId
+FROM dbo.CompanySessionMap
+WHERE CompanyId = @Id;";
+
+            const string cuisineSql = @"
+SELECT CuisineId
+FROM dbo.CompanyCuisineMap
+WHERE CompanyId = @Id;";
+
+            var company = await con.QueryFirstOrDefaultAsync<CompanySaveDto>(companySql, new { Id = id });
+
+            if (company == null)
+                return null;
+
+            var user = await con.QueryFirstOrDefaultAsync(userSql, new { Id = id });
+
+            //if (user != null)
+            //{
+            //    company.ContactPerson = user.Username;
+            //    company.ContactNo = user.ContactNo;
+            //}
+
+            company.LocationIds = (await con.QueryAsync<int>(locationSql, new { Id = id })).ToList();
+            company.SessionIds = (await con.QueryAsync<int>(sessionSql, new { Id = id })).ToList();
+            company.CuisineIds = (await con.QueryAsync<int>(cuisineSql, new { Id = id })).ToList();
+
+            company.Password = string.Empty;
+
+            return company;
         }
 
         public async Task<int> SaveAsync(CompanySaveDto dto)
@@ -177,7 +217,7 @@ WHERE CompanyId = @CompanyId
                             CompanyId = companyId
                         }, tx);
                     }
-
+                    await SaveCompanyMappingsAsync(con, tx, dto, companyId);
                     tx.Commit();
                     return companyId;
                 }
@@ -279,7 +319,7 @@ VALUES
                         PasswordHash = passwordHash,
                         CreatedBy = dto.UserId
                     }, tx);
-
+                    await SaveCompanyMappingsAsync(con, tx, dto, companyId);
                     tx.Commit();
                     return companyId;
                 }
@@ -288,6 +328,7 @@ VALUES
             {
                 tx.Rollback();
                 throw;
+               
             }
         }
 
@@ -327,6 +368,68 @@ WHERE CompanyId = @Id;";
             {
                 tx.Rollback();
                 throw;
+            }
+        }
+        private async Task SaveCompanyMappingsAsync(IDbConnection con, IDbTransaction tx, CompanySaveDto dto, int companyId)
+        {
+            await con.ExecuteAsync("DELETE FROM dbo.CompanyLocationMap WHERE CompanyId = @CompanyId;",
+                new { CompanyId = companyId }, tx);
+
+            await con.ExecuteAsync("DELETE FROM dbo.CompanySessionMap WHERE CompanyId = @CompanyId;",
+                new { CompanyId = companyId }, tx);
+
+            await con.ExecuteAsync("DELETE FROM dbo.CompanyCuisineMap WHERE CompanyId = @CompanyId;",
+                new { CompanyId = companyId }, tx);
+
+            if (dto.LocationIds != null && dto.LocationIds.Any())
+            {
+                const string locationSql = @"
+INSERT INTO dbo.CompanyLocationMap (CompanyId, LocationId, CreatedBy, CreatedDate)
+VALUES (@CompanyId, @LocationId, @CreatedBy, GETDATE());";
+
+                foreach (var locationId in dto.LocationIds.Distinct())
+                {
+                    await con.ExecuteAsync(locationSql, new
+                    {
+                        CompanyId = companyId,
+                        LocationId = locationId,
+                        CreatedBy = dto.UserId
+                    }, tx);
+                }
+            }
+
+            if (dto.SessionIds != null && dto.SessionIds.Any())
+            {
+                const string sessionSql = @"
+INSERT INTO dbo.CompanySessionMap (CompanyId, SessionId, CreatedBy, CreatedDate)
+VALUES (@CompanyId, @SessionId, @CreatedBy, GETDATE());";
+
+                foreach (var sessionId in dto.SessionIds.Distinct())
+                {
+                    await con.ExecuteAsync(sessionSql, new
+                    {
+                        CompanyId = companyId,
+                        SessionId = sessionId,
+                        CreatedBy = dto.UserId
+                    }, tx);
+                }
+            }
+
+            if (dto.CuisineIds != null && dto.CuisineIds.Any())
+            {
+                const string cuisineSql = @"
+INSERT INTO dbo.CompanyCuisineMap (CompanyId, CuisineId, CreatedBy, CreatedDate)
+VALUES (@CompanyId, @CuisineId, @CreatedBy, GETDATE());";
+
+                foreach (var cuisineId in dto.CuisineIds.Distinct())
+                {
+                    await con.ExecuteAsync(cuisineSql, new
+                    {
+                        CompanyId = companyId,
+                        CuisineId = cuisineId,
+                        CreatedBy = dto.UserId
+                    }, tx);
+                }
             }
         }
     }
