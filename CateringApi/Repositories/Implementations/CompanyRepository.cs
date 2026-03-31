@@ -172,7 +172,7 @@ SELECT @Id;";
                     const string updateUserSql = @"
 UPDATE dbo.UserMaster
 SET
-    Username    = @Email,
+    Username    = @ContactPerson,
     Email       = @Email,
     IsActive    = @IsActive,
     UpdatedBy   = @UserId,
@@ -186,6 +186,7 @@ WHERE CompanyId = @CompanyId
 
                     await con.ExecuteAsync(updateUserSql, new
                     {
+                        ContactPerson= dto.ContactPerson,
                         Email = dto.Email,
                         IsActive = dto.IsActive,
                         UserId = dto.UserId,
