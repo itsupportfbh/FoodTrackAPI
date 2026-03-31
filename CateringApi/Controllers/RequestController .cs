@@ -29,10 +29,10 @@ namespace CateringApi.Controllers
             return Ok(new { data });
         }
 
-        [HttpGet("GetRequestById/{requestId}")]
-        public async Task<IActionResult> GetRequestById(int requestId)
+        [HttpGet("GetRequestById/{id}")]
+        public async Task<IActionResult> GetRequestById(int id)
         {
-            var request = await _repository.GetRequestByIdAsync(requestId);
+            var request = await _repository.GetRequestByIdAsync(id);
             if (request == null)
                 return NotFound("Request not found");
 
@@ -45,18 +45,6 @@ namespace CateringApi.Controllers
             if (model.CompanyId <= 0)
                 return BadRequest("Company is required.");
 
-            if (model.SessionId <= 0)
-                return BadRequest("Session is required.");
-
-            if (model.CuisineId <= 0)
-                return BadRequest("Cuisine is required.");
-
-            if (model.LocationId <= 0)
-                return BadRequest("Location is required.");
-
-            if (model.Qty <= 0)
-                return BadRequest("Qty must be greater than zero.");
-
             if (model.FromDate == default)
                 return BadRequest("From Date is required.");
 
@@ -66,25 +54,36 @@ namespace CateringApi.Controllers
             if (model.FromDate.Date > model.ToDate.Date)
                 return BadRequest("From Date should not be greater than To Date.");
 
-            var exists = await _repository.ExistsDuplicateAsync(model);
-            if (exists)
-                return BadRequest("Same request already exists.");
+            if (model.Lines == null || !model.Lines.Any())
+                return BadRequest("At least one line is required.");
+
+            if (model.Lines.Any(x => x.SessionId <= 0))
+                return BadRequest("Session is required in all lines.");
+
+            if (model.Lines.Any(x => x.CuisineId <= 0))
+                return BadRequest("Cuisine is required in all lines.");
+
+            if (model.Lines.Any(x => x.LocationId <= 0))
+                return BadRequest("Location is required in all lines.");
+
+            if (model.Lines.Any(x => x.Qty <= 0))
+                return BadRequest("Qty must be greater than zero in all lines.");
 
             var id = await _repository.SaveRequestAsync(model);
 
             return Ok(new
             {
-                requestId = id,
-                message = model.RequestId.HasValue && model.RequestId.Value > 0
+                id,
+                message = model.Id.HasValue && model.Id.Value > 0
                     ? "Request updated successfully"
                     : "Request created successfully"
             });
         }
 
-        [HttpDelete("DeleteRequest/{requestId}")]
-        public async Task<IActionResult> DeleteRequest(int requestId, [FromQuery] int? userId)
+        [HttpDelete("DeleteRequest/{id}")]
+        public async Task<IActionResult> DeleteRequest(int id, [FromQuery] int? userId)
         {
-            var deleted = await _repository.DeleteRequestAsync(requestId, userId);
+            var deleted = await _repository.DeleteRequestAsync(id, userId);
             if (!deleted)
                 return NotFound("Request not found");
 

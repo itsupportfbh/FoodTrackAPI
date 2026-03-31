@@ -26,13 +26,7 @@ WHERE Id = @UserId
 
             var companyId = await con.QueryFirstOrDefaultAsync<int?>(userCompanySql, new { UserId = userId });
 
-            IEnumerable<DropdownDto> companies;
-            IEnumerable<DropdownDto> sessions;
-            IEnumerable<DropdownDto> cuisines;
-            IEnumerable<DropdownDto> locations;
-
-     
-                const string companySql = @"
+            const string companySql = @"
 SELECT
     c.Id,
     NULL AS CompanyId,
@@ -41,7 +35,7 @@ FROM dbo.CompanyMaster c
 WHERE c.Id = @CompanyId
   AND c.IsActive = 1;";
 
-                const string sessionSql = @"
+            const string sessionSql = @"
 SELECT DISTINCT
     s.Id,
     csm.CompanyId,
@@ -51,7 +45,7 @@ INNER JOIN dbo.CompanySessionMap csm ON csm.SessionId = s.Id
 WHERE csm.CompanyId = @CompanyId
 ORDER BY s.SessionName;";
 
-                const string cuisineSql = @"
+            const string cuisineSql = @"
 SELECT DISTINCT
     c.Id,
     ccm.CompanyId,
@@ -62,7 +56,7 @@ WHERE ccm.CompanyId = @CompanyId
   AND c.IsActive = 1
 ORDER BY c.CuisineName;";
 
-                const string locationSql = @"
+            const string locationSql = @"
 SELECT DISTINCT
     l.Id,
     clm.CompanyId,
@@ -73,11 +67,10 @@ WHERE clm.CompanyId = @CompanyId
   AND l.IsActive = 1
 ORDER BY l.LocationName;";
 
-                companies = await con.QueryAsync<DropdownDto>(companySql, new { CompanyId = companyId ?? 0 });
-                sessions = await con.QueryAsync<DropdownDto>(sessionSql, new { CompanyId = companyId ?? 0 });
-                cuisines = await con.QueryAsync<DropdownDto>(cuisineSql, new { CompanyId = companyId ?? 0 });
-                locations = await con.QueryAsync<DropdownDto>(locationSql, new { CompanyId = companyId ?? 0 });
-           
+            var companies = await con.QueryAsync<DropdownDto>(companySql, new { CompanyId = companyId ?? 0 });
+            var sessions = await con.QueryAsync<DropdownDto>(sessionSql, new { CompanyId = companyId ?? 0 });
+            var cuisines = await con.QueryAsync<DropdownDto>(cuisineSql, new { CompanyId = companyId ?? 0 });
+            var locations = await con.QueryAsync<DropdownDto>(locationSql, new { CompanyId = companyId ?? 0 });
 
             return new RequestPageMasterDto
             {
@@ -100,140 +93,133 @@ WHERE Id = @UserId
 
             var companyId = await con.QueryFirstOrDefaultAsync<int?>(userCompanySql, new { UserId = userId });
 
-            string sql;
-
-                sql = @"
+            const string sql = @"
 SELECT
-    r.RequestId,
-    r.CompanyId,
+    rh.Id,
+    rh.RequestNo,
+    rh.CompanyId,
     c.CompanyName,
-    r.SessionId,
-    s.SessionName,
-    r.CuisineId,
-    cu.CuisineName,
-    r.LocationId,
-    l.LocationName,
-    r.FromDate,
-    r.ToDate,
-    r.Qty,
-    r.IsActive,
-    r.CreatedBy,
-    r.CreatedDate,
-    r.UpdatedBy,
-    r.UpdatedDate
-FROM dbo.RequestMaster r
-INNER JOIN dbo.CompanyMaster c ON c.Id = r.CompanyId
-INNER JOIN dbo.Session s ON s.Id = r.SessionId
-INNER JOIN dbo.CuisineMaster cu ON cu.Id = r.CuisineId
-INNER JOIN dbo.Location l ON l.Id = r.LocationId
-WHERE r.IsActive = 1
-  AND r.CompanyId = @CompanyId
-ORDER BY r.RequestId DESC;";
-            
+    rh.FromDate,
+    rh.ToDate,
+    rh.TotalQty,
+    rh.IsActive,
+    rh.CreatedBy,
+    rh.CreatedDate,
+    rh.UpdatedBy,
+    rh.UpdatedDate
+FROM dbo.RequestHeader rh
+INNER JOIN dbo.CompanyMaster c ON c.Id = rh.CompanyId
+WHERE rh.IsActive = 1
+  AND rh.CompanyId = @CompanyId
+ORDER BY rh.Id DESC;";
 
             return await con.QueryAsync<RequestDto>(sql, new { CompanyId = companyId ?? 0 });
         }
 
-        public async Task<RequestDto?> GetRequestByIdAsync(int requestId)
+        public async Task<RequestDto?> GetRequestByIdAsync(int id)
         {
-            const string sql = @"
+            using var con = _context.CreateConnection();
+
+            const string headerSql = @"
 SELECT
-    r.RequestId,
-    r.CompanyId,
+    rh.Id,
+    rh.RequestNo,
+    rh.CompanyId,
     c.CompanyName,
-    r.SessionId,
+    rh.FromDate,
+    rh.ToDate,
+    rh.TotalQty,
+    rh.IsActive,
+    rh.CreatedBy,
+    rh.CreatedDate,
+    rh.UpdatedBy,
+    rh.UpdatedDate
+FROM dbo.RequestHeader rh
+INNER JOIN dbo.CompanyMaster c ON c.Id = rh.CompanyId
+WHERE rh.Id = @Id
+  AND rh.IsActive = 1;";
+
+            const string linesSql = @"
+SELECT
+    rd.Id,
+    rd.RequestHeaderId,
+    rd.SessionId,
     s.SessionName,
-    r.CuisineId,
-    cu.CuisineName,
-    r.LocationId,
+    rd.CuisineId,
+    cm.CuisineName,
+    rd.LocationId,
     l.LocationName,
-    r.FromDate,
-    r.ToDate,
-    r.Qty,
-    r.IsActive,
-    r.CreatedBy,
-    r.CreatedDate,
-    r.UpdatedBy,
-    r.UpdatedDate
-FROM dbo.RequestMaster r
-INNER JOIN dbo.CompanyMaster c ON c.Id = r.CompanyId
-INNER JOIN dbo.Session s ON s.Id = r.SessionId
-INNER JOIN dbo.CuisineMaster cu ON cu.Id = r.CuisineId
-INNER JOIN dbo.Location l ON l.Id = r.LocationId
-WHERE r.RequestId = @RequestId;";
+    rd.Qty
+FROM dbo.RequestDetail rd
+INNER JOIN dbo.Session s ON s.Id = rd.SessionId
+INNER JOIN dbo.CuisineMaster cm ON cm.Id = rd.CuisineId
+INNER JOIN dbo.Location l ON l.Id = rd.LocationId
+WHERE rd.RequestHeaderId = @Id
+  AND rd.IsActive = 1
+ORDER BY rd.Id;";
 
-            using var con = _context.CreateConnection();
-            return await con.QueryFirstOrDefaultAsync<RequestDto>(sql, new { RequestId = requestId });
-        }
+            var header = await con.QueryFirstOrDefaultAsync<RequestDto>(headerSql, new { Id = id });
+            if (header == null)
+                return null;
 
-        public async Task<bool> ExistsDuplicateAsync(Request model)
-        {
-            const string sql = @"
-SELECT 1
-FROM dbo.RequestMaster
-WHERE IsActive = 1
-  AND CompanyId = @CompanyId
-  AND SessionId = @SessionId
-  AND CuisineId = @CuisineId
-  AND LocationId = @LocationId
-  AND FromDate = @FromDate
-  AND ToDate = @ToDate
-  AND (@RequestId IS NULL OR RequestId <> @RequestId);";
+            var lines = await con.QueryAsync<RequestDetailDto>(linesSql, new { Id = id });
+            header.Lines = lines.ToList();
 
-            using var con = _context.CreateConnection();
-
-            var result = await con.QueryFirstOrDefaultAsync<int?>(
-                sql,
-                new
-                {
-                    model.RequestId,
-                    model.CompanyId,
-                    model.SessionId,
-                    model.CuisineId,
-                    model.LocationId,
-                    model.FromDate,
-                    model.ToDate
-                });
-
-            return result.HasValue;
+            return header;
         }
 
         public async Task<int> SaveRequestAsync(Request model)
         {
             using var con = _context.CreateConnection();
+            con.Open();
 
-            if (model.RequestId.HasValue && model.RequestId.Value > 0)
+            using var tran = con.BeginTransaction();
+
+            try
             {
-                const string updateSql = @"
-UPDATE dbo.RequestMaster
+                var totalQty = model.Lines?.Sum(x => x.Qty) ?? 0;
+
+                if (model.Id.HasValue && model.Id.Value > 0)
+                {
+                    const string updateHeaderSql = @"
+UPDATE dbo.RequestHeader
 SET
     CompanyId = @CompanyId,
-    SessionId = @SessionId,
-    CuisineId = @CuisineId,
-    LocationId = @LocationId,
     FromDate = @FromDate,
     ToDate = @ToDate,
-    Qty = @Qty,
+    TotalQty = @TotalQty,
     IsActive = @IsActive,
     UpdatedBy = @UserId,
     UpdatedDate = GETDATE()
-WHERE RequestId = @RequestId;
+WHERE Id = @Id;";
 
-SELECT @RequestId;";
+                    await con.ExecuteAsync(updateHeaderSql, new
+                    {
+                        model.CompanyId,
+                        model.FromDate,
+                        model.ToDate,
+                        TotalQty = totalQty,
+                        model.IsActive,
+                        model.UserId,
+                        model.Id
+                    }, tran);
 
-                return await con.ExecuteScalarAsync<int>(updateSql, model);
-            }
-            else
-            {
-                const string insertSql = @"
-INSERT INTO dbo.RequestMaster
+                    const string deleteLinesSql = @"
+DELETE FROM dbo.RequestDetail
+WHERE RequestHeaderId = @RequestHeaderId;";
+
+                    await con.ExecuteAsync(deleteLinesSql, new
+                    {
+                        RequestHeaderId = model.Id.Value
+                    }, tran);
+
+                    const string insertLineSql = @"
+INSERT INTO dbo.RequestDetail
 (
-    CompanyId,
+    RequestHeaderId,
     SessionId,
     CuisineId,
     LocationId,
-    FromDate,
-    ToDate,
     Qty,
     IsActive,
     CreatedBy,
@@ -241,37 +227,166 @@ INSERT INTO dbo.RequestMaster
 )
 VALUES
 (
-    @CompanyId,
+    @RequestHeaderId,
     @SessionId,
     @CuisineId,
     @LocationId,
+    @Qty,
+    1,
+    @UserId,
+    GETDATE()
+);";
+
+                    foreach (var line in model.Lines)
+                    {
+                        await con.ExecuteAsync(insertLineSql, new
+                        {
+                            RequestHeaderId = model.Id.Value,
+                            line.SessionId,
+                            line.CuisineId,
+                            line.LocationId,
+                            line.Qty,
+                            model.UserId
+                        }, tran);
+                    }
+
+                    tran.Commit();
+                    return model.Id.Value;
+                }
+                else
+                {
+                    const string insertHeaderSql = @"
+INSERT INTO dbo.RequestHeader
+(
+    RequestNo,
+    CompanyId,
+    FromDate,
+    ToDate,
+    TotalQty,
+    IsActive,
+    CreatedBy,
+    CreatedDate
+)
+VALUES
+(
+    '',
+    @CompanyId,
     @FromDate,
     @ToDate,
-    @Qty,
-    @IsActive,
+    @TotalQty,
+    1,
     @UserId,
     GETDATE()
 );
 
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-                return await con.ExecuteScalarAsync<int>(insertSql, model);
+                    var newId = await con.ExecuteScalarAsync<int>(insertHeaderSql, new
+                    {
+                        model.CompanyId,
+                        model.FromDate,
+                        model.ToDate,
+                        TotalQty = totalQty,
+                        model.UserId
+                    }, tran);
+
+                    var requestNo = $"REQ-{newId.ToString("D5")}";
+
+                    const string updateRequestNoSql = @"
+UPDATE dbo.RequestHeader
+SET RequestNo = @RequestNo
+WHERE Id = @Id;";
+
+                    await con.ExecuteAsync(updateRequestNoSql, new
+                    {
+                        RequestNo = requestNo,
+                        Id = newId
+                    }, tran);
+
+                    const string insertLineSql = @"
+INSERT INTO dbo.RequestDetail
+(
+    RequestHeaderId,
+    SessionId,
+    CuisineId,
+    LocationId,
+    Qty,
+    IsActive,
+    CreatedBy,
+    CreatedDate
+)
+VALUES
+(
+    @RequestHeaderId,
+    @SessionId,
+    @CuisineId,
+    @LocationId,
+    @Qty,
+    1,
+    @UserId,
+    GETDATE()
+);";
+
+                    foreach (var line in model.Lines)
+                    {
+                        await con.ExecuteAsync(insertLineSql, new
+                        {
+                            RequestHeaderId = newId,
+                            line.SessionId,
+                            line.CuisineId,
+                            line.LocationId,
+                            line.Qty,
+                            model.UserId
+                        }, tran);
+                    }
+
+                    tran.Commit();
+                    return newId;
+                }
+            }
+            catch
+            {
+                tran.Rollback();
+                throw;
             }
         }
 
-        public async Task<bool> DeleteRequestAsync(int requestId, int? userId)
+        public async Task<bool> DeleteRequestAsync(int id, int? userId)
         {
-            const string sql = @"
-UPDATE dbo.RequestMaster
+            using var con = _context.CreateConnection();
+            con.Open();
+
+            using var tran = con.BeginTransaction();
+
+            try
+            {
+                const string updateHeaderSql = @"
+UPDATE dbo.RequestHeader
 SET
     IsActive = 0,
     UpdatedBy = @UserId,
     UpdatedDate = GETDATE()
-WHERE RequestId = @RequestId;";
+WHERE Id = @Id;";
 
-            using var con = _context.CreateConnection();
-            var rows = await con.ExecuteAsync(sql, new { RequestId = requestId, UserId = userId });
-            return rows > 0;
+                const string updateDetailSql = @"
+UPDATE dbo.RequestDetail
+SET
+    IsActive = 0,
+    UpdatedBy = @UserId,
+    UpdatedDate = GETDATE()
+WHERE RequestHeaderId = @Id;";
+
+                var rows = await con.ExecuteAsync(updateHeaderSql, new { Id = id, UserId = userId }, tran);
+                await con.ExecuteAsync(updateDetailSql, new { Id = id, UserId = userId }, tran);
+
+                tran.Commit();
+                return rows > 0;
+            }
+            catch
+            {
+                tran.Rollback();
+                throw;
+            }
         }
     }
 }
