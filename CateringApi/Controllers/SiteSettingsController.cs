@@ -44,5 +44,10 @@ namespace CateringApi.Controllers
             var result = _siteSettingsRepository.DeleteSiteSettings(id, userId);
             return result;
         }
+        [HttpGet]
+        public async Task<SiteSettings?> GetLatestSiteSetting()
+        {
+            return await _siteSettingsRepository.GetLatestSiteSetting();
+        }
     }
 }

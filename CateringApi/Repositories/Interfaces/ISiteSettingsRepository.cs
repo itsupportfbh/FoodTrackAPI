@@ -12,6 +12,7 @@ namespace CateringApi.Repositories.Interfaces
             Task<SiteSettings> GetSiteSettingsbyid(int id);
            public  Task<SiteSettings> AddUpdateSiteSettings(SiteSettings model);
         public SiteSettings DeleteSiteSettings(int id, int? userId);
+        public  Task<SiteSettings?> GetLatestSiteSetting();
 
 
     }
