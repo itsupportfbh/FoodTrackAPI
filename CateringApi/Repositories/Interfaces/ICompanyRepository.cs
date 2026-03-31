@@ -1,9 +1,11 @@
 ﻿using CateringApi.DTOs.Company;
+using System.Data;
 
 public interface ICompanyRepository
 {
     Task<IEnumerable<CompanyDto>> GetAllAsync();
-    Task<CompanyDto?> GetByIdAsync(int id);
+    Task<CompanySaveDto?> GetByIdAsync(int id);
     Task<int> SaveAsync(CompanySaveDto dto);
     Task<bool> DeleteAsync(int id, int? userId);
+   
 }

@@ -17,5 +17,8 @@
         public string? PostalCode { get; set; }
         public bool IsActive { get; set; } = true;
         public int? UserId { get; set; }
+        public List<int> LocationIds { get; set; } = new();
+        public List<int> SessionIds { get; set; } = new();
+        public List<int> CuisineIds { get; set; } = new();
     }
 }
