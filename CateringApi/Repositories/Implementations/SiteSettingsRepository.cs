@@ -104,7 +104,17 @@ namespace CateringApi.Repositories.Implementations
 
         public Task<SiteSettings> GetSiteSettingsbyid(int id)
         {
-            throw new NotImplementedException();
+
+            var result = _context.SiteSettings.Where(x => x.IsActive == true && x.Id == id).FirstOrDefaultAsync();
+            return result;
+        }
+
+        public async Task<SiteSettings?> GetLatestSiteSetting()
+        {
+            return await _context.SiteSettings
+                .Where(x => x.IsActive)
+                .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+                .FirstOrDefaultAsync();
         }
     }
 }
