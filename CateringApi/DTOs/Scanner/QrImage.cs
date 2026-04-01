@@ -1,0 +1,16 @@
+﻿namespace CateringApi.DTOs.Scanner
+{
+    public class QrImage
+    {
+
+        public int Id { get; set; }                     // Primary Key
+        public int Qrcoderequestid { get; set; }             // Foreign Key to Request table
+        public byte[] QrCodeImage { get; set; }        // QR code image stored as binary
+        public string QrCodeText { get; set; }         // QR code text
+        public bool IsActive { get; set; } = true;     // Active flag
+        public DateTime CreatedDate { get; set; }      // When record was created
+        public string CreatedBy { get; set; }          // Optional creator
+        public string UpdatedBy { get; set; }          // Optional updater
+        public DateTime? UpdatedDate { get; set; }
+    }
+}
