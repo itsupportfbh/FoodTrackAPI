@@ -28,7 +28,7 @@ SELECT
     UpdatedDate
 FROM dbo.CuisineMaster
 WHERE IsActive = 1
-ORDER BY CuisineName;";
+ORDER BY Id;";
 
             using var con = _context.CreateConnection();
             return await con.QueryAsync<CuisineDto>(sql);

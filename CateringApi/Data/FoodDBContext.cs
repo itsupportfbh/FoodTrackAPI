@@ -15,7 +15,7 @@ namespace CateringApi.Data
 
         public DbSet<SiteSettings> SiteSettings { get; set; }
         public DbSet<QrCodeRequest> QrCodeRequest {  get; set; }
-        public DbSet<RequestHeader> Requests { get; set; }
+        public DbSet<RequestHeaderDto> Requests { get; set; }
         public DbSet<CompanyMaster> company{ get; set; }
         public DbSet<QrImage> QrImage { get; set; }
     }
