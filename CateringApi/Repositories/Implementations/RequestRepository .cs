@@ -168,7 +168,7 @@ ORDER BY rd.Id;";
             return header;
         }
 
-        public async Task<int> SaveRequestAsync(Request model)
+        public async Task<int> SaveRequestAsync(RequestHeader model)
         {
             using var con = _context.CreateConnection();
             con.Open();

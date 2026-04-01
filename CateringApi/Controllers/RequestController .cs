@@ -40,7 +40,7 @@ namespace CateringApi.Controllers
         }
 
         [HttpPost("SaveRequest")]
-        public async Task<IActionResult> SaveRequest([FromBody] Request model)
+        public async Task<IActionResult> SaveRequest([FromBody] RequestHeader model)
         {
             if (model.CompanyId <= 0)
                 return BadRequest("Company is required.");
