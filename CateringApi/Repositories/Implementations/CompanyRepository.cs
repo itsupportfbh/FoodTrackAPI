@@ -16,7 +16,7 @@ namespace CateringApi.Repositories.Implementations
             _context = context;
         }
 
-        public async Task<IEnumerable<CompanyDto>> GetAllAsync()
+        public async Task<IEnumerable<CompanyMaster>> GetAllAsync()
         {
             const string sql = @"
 SELECT
@@ -40,7 +40,7 @@ FROM dbo.CompanyMaster where isactive = 1
 ORDER BY CompanyName;";
 
             using var con = _context.CreateConnection();
-            return await con.QueryAsync<CompanyDto>(sql);
+            return await con.QueryAsync<CompanyMaster>(sql);
         }
 
         public async Task<CompanySaveDto?> GetByIdAsync(int id)
@@ -172,7 +172,7 @@ SELECT @Id;";
                     const string updateUserSql = @"
 UPDATE dbo.UserMaster
 SET
-    Username    = @ContactPerson,
+    
     Email       = @Email,
     IsActive    = @IsActive,
     UpdatedBy   = @UserId,
