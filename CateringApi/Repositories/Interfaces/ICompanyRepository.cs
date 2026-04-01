@@ -3,7 +3,7 @@ using System.Data;
 
 public interface ICompanyRepository
 {
-    Task<IEnumerable<CompanyDto>> GetAllAsync();
+    Task<IEnumerable<CompanyMaster>> GetAllAsync();
     Task<CompanySaveDto?> GetByIdAsync(int id);
     Task<int> SaveAsync(CompanySaveDto dto);
     Task<bool> DeleteAsync(int id, int? userId);

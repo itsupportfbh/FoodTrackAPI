@@ -20,7 +20,7 @@ namespace CateringApi.Controllers
         public async Task<IActionResult> GetAll()
         {
             var data = await _repository.GetAllAsync();
-            return Ok(ApiResponse<IEnumerable<CompanyDto>>.Ok(data));
+            return Ok(ApiResponse<IEnumerable<CompanyMaster>>.Ok(data));
         }
 
         [HttpGet("{id:int}")]

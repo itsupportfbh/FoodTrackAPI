@@ -1,6 +1,6 @@
 ﻿namespace CateringApi.DTOs.Company
 {
-    public class CompanyDto
+    public class CompanyMaster
     {
         public int Id { get; set; }
         public string CompanyCode { get; set; } = "";
