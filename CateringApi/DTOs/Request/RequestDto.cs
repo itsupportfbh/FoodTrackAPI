@@ -1,6 +1,6 @@
 ﻿namespace CateringApi.Models
 {
-    public class RequestHeader
+    public class RequestHeaderDto
     {
         public int? Id { get; set; }
         public string? RequestNo { get; set; }

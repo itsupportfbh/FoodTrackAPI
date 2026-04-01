@@ -33,7 +33,8 @@ SELECT
     c.CompanyName AS Name
 FROM dbo.CompanyMaster c
 WHERE c.Id = @CompanyId
-  AND c.IsActive = 1;";
+  AND c.IsActive = 1
+ORDER BY c.Id;";
 
             const string sessionSql = @"
 SELECT DISTINCT
@@ -43,7 +44,7 @@ SELECT DISTINCT
 FROM dbo.Session s
 INNER JOIN dbo.CompanySessionMap csm ON csm.SessionId = s.Id
 WHERE csm.CompanyId = @CompanyId
-ORDER BY s.SessionName;";
+ORDER BY s.Id;";
 
             const string cuisineSql = @"
 SELECT DISTINCT
@@ -54,7 +55,7 @@ FROM dbo.CuisineMaster c
 INNER JOIN dbo.CompanyCuisineMap ccm ON ccm.CuisineId = c.Id
 WHERE ccm.CompanyId = @CompanyId
   AND c.IsActive = 1
-ORDER BY c.CuisineName;";
+ORDER BY c.Id;";
 
             const string locationSql = @"
 SELECT DISTINCT
@@ -65,7 +66,7 @@ FROM dbo.Location l
 INNER JOIN dbo.CompanyLocationMap clm ON clm.LocationId = l.Id
 WHERE clm.CompanyId = @CompanyId
   AND l.IsActive = 1
-ORDER BY l.LocationName;";
+ORDER BY l.Id;";
 
             var companies = await con.QueryAsync<DropdownDto>(companySql, new { CompanyId = companyId ?? 0 });
             var sessions = await con.QueryAsync<DropdownDto>(sessionSql, new { CompanyId = companyId ?? 0 });
@@ -168,7 +169,7 @@ ORDER BY rd.Id;";
             return header;
         }
 
-        public async Task<int> SaveRequestAsync(RequestHeader model)
+        public async Task<int> SaveRequestAsync(RequestHeaderDto model)
         {
             using var con = _context.CreateConnection();
             con.Open();
