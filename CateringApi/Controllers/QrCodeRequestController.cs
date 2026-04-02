@@ -33,7 +33,7 @@ namespace CateringApi.Controllers
             return _qrCodeRequestRepository.GetAllQRModel();
         }
         [HttpGet]
-        public Task<List<QrCodeRequestModel>> GetAllQRModelbyrequestId(int id, string requestId)
+        public Task<List<QrCodeRequestModel>> GetAllQRModelbyrequestId(int id, int requestId)
         {
             return _qrCodeRequestRepository.GetAllQRModelbyId(id, requestId);
         }
@@ -51,20 +51,28 @@ namespace CateringApi.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> SendQrEmail([FromBody] SendQrEmailDto model)
+        public async Task<IActionResult> SendQrEmail([FromBody] SendEmailDto model)
         {
             var result = await _qrCodeRequestRepository.SendQrEmailAsync(model);
+            return Ok(new
+            {
+                success = result,
+                message = "QR email sent successfully"
+            });
 
-            if (result)
-                return Ok("Email sent successfully");
-
-            return BadRequest("Failed to send email");
         }
         [HttpPost]
-        public Task<QrCodeRequestModel> AddUpdateQrWithImagesAsync(QrCodeRequestModel model)
-        {
-            return _qrCodeRequestRepository.AddUpdateQrWithImagesAsync<QrCodeRequestModel>(model);
 
+        public async Task<IActionResult> AddUpdateQrWithImagesAsync([FromBody] QrCodeRequestModel model)
+        {
+            var result = await _qrCodeRequestRepository.AddUpdateQrWithImagesAsync(model);
+            return Ok(result);
+        }
+
+        [HttpPost]
+        public List<QrResultDto> GenerateUniqueQrs(QrCodeRequest model)
+        {
+            return _qrCodeRequestRepository.GenerateUniqueQrs(model);
         }
 
     }
