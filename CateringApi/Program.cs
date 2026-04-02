@@ -71,6 +71,8 @@ builder.Services.AddScoped<ISiteSettingsRepository, SiteSettingsRepository>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<IRequestRepository, RequestRepository>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IRequestOverrideRepository, RequestOverrideRepository>();
+
 
 // Service registrations
 builder.Services.AddScoped<IJwtService, JwtService>();
