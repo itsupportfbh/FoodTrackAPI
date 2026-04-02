@@ -9,7 +9,7 @@
         public string CompanyName { get; set; } = string.Empty;
         public string CompanyEmail { get; set; } = string.Empty;
 
-        public string RequestId { get; set; } = string.Empty;
+        public int RequestId { get; set; } 
         public int NoofQR { get; set; }
         public DateTime QRValidFrom { get; set; }
 
@@ -17,7 +17,7 @@
        
         public bool IsActive { get; set; }
         public DateTime CreatedDate { get; set; }
-        public DateTime UpdatedDate { get; set; }
+        public DateTime? UpdatedDate { get; set; }
         public int CreatedBy { get; set; }
         public int UpdatedBy { get; set; }
         //

@@ -11,7 +11,7 @@
         public decimal TotalQty { get; set; }
 
         public bool IsActive { get; set; } = true;
-        public int? UserId { get; set; }
+       // public int? UserId { get; set; }
 
         public int? CreatedBy { get; set; }
         public DateTime? CreatedDate { get; set; }
