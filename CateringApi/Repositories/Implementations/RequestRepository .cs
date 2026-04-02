@@ -86,13 +86,19 @@ ORDER BY l.Id;";
         {
             using var con = _context.CreateConnection();
 
-            const string userCompanySql = @"
-SELECT CompanyId
+            const string userSql = @"
+SELECT CompanyId, RoleId
 FROM dbo.UserMaster
 WHERE Id = @UserId
   AND IsActive = 1;";
 
-            var companyId = await con.QueryFirstOrDefaultAsync<int?>(userCompanySql, new { UserId = userId });
+            var user = await con.QueryFirstOrDefaultAsync<dynamic>(userSql, new { UserId = userId });
+
+            if (user == null)
+                return Enumerable.Empty<RequestDto>();
+
+            int companyId = Convert.ToInt32(user.CompanyId ?? 0);
+            int roleId = Convert.ToInt32(user.RoleId ?? 0);
 
             const string sql = @"
 SELECT
@@ -111,10 +117,14 @@ SELECT
 FROM dbo.RequestHeader rh
 INNER JOIN dbo.CompanyMaster c ON c.Id = rh.CompanyId
 WHERE rh.IsActive = 1
-  AND rh.CompanyId = @CompanyId
+  AND (@RoleId = 1 OR rh.CompanyId = @CompanyId)
 ORDER BY rh.Id DESC;";
 
-            return await con.QueryAsync<RequestDto>(sql, new { CompanyId = companyId ?? 0 });
+            return await con.QueryAsync<RequestDto>(sql, new
+            {
+                CompanyId = companyId,
+                RoleId = roleId
+            });
         }
 
         public async Task<RequestDto?> GetRequestByIdAsync(int id)
