@@ -18,5 +18,6 @@ namespace CateringApi.Data
         public DbSet<RequestHeader> RequestHeader { get; set; }
         public DbSet<CompanyMaster>CompanyMaster { get; set; }
         public DbSet<QrImage> QrImage { get; set; }
+       
     }
 }

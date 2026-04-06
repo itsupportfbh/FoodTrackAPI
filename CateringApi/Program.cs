@@ -77,6 +77,8 @@ builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<IRequestRepository, RequestRepository>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IQrCodeRequestRepository, QrCodeRequestRepository>();
+builder.Services.AddScoped<IQrValidationRepository, QrValidationRepository>();
+
 
 // Service registrations
 builder.Services.AddScoped<IJwtService, JwtService>();

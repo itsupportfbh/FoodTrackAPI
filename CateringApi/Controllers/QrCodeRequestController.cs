@@ -13,9 +13,11 @@ namespace CateringApi.Controllers
 
 
         private readonly IQrCodeRequestRepository _qrCodeRequestRepository;
-        public QrCodeRequestController(IQrCodeRequestRepository qrCodeRequestRepository)
+        private readonly IQrValidationRepository _qrvalidationrepo;
+        public QrCodeRequestController(IQrCodeRequestRepository qrCodeRequestRepository, IQrValidationRepository qrValidationRepository)
         {
             _qrCodeRequestRepository = qrCodeRequestRepository;
+            _qrvalidationrepo = qrValidationRepository;
         }
 
 
@@ -45,9 +47,9 @@ namespace CateringApi.Controllers
         }
         
         [HttpPost]
-        public QrResultDto GenerateQr(QrCodeRequest model)
+        public async Task<QrResultDto> GenerateQr(QrCodeRequest model)
         {
-            return _qrCodeRequestRepository.GenerateQr(model);
+            return await _qrCodeRequestRepository.GenerateQr(model);
         }
 
         [HttpPost]
@@ -70,10 +72,21 @@ namespace CateringApi.Controllers
         }
 
         [HttpPost]
-        public List<QrResultDto> GenerateUniqueQrs(QrCodeRequest model)
+        public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
         {
-            return _qrCodeRequestRepository.GenerateUniqueQrs(model);
+            return await _qrCodeRequestRepository.GenerateUniqueQrs(model);
         }
+        [HttpPost]
+        public async Task<QrValidationResult> ValidateScanAsync(string uniqueCode)
+        {
+            return  await _qrvalidationrepo.ValidateScanAsync(uniqueCode); 
+        }
+
+
+
+
+
+
 
     }
 }
