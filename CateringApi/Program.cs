@@ -1,5 +1,5 @@
-using System.Text;
 using CateringApi.Data;
+using CateringApi.DTOs.Scanner;
 using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using CateringApi.Services;
@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,10 @@ builder.Services.AddDbContext<FoodDBContext>(options =>
 {
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
+
+builder.Services.Configure<SmtpSettings>(
+    builder.Configuration.GetSection("SmtpSettings"));
+
 
 builder.Services.AddSingleton<DapperContext>();
 
@@ -71,7 +76,8 @@ builder.Services.AddScoped<ISiteSettingsRepository, SiteSettingsRepository>();
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<IRequestRepository, RequestRepository>();
 builder.Services.AddScoped<IEmailService, EmailService>();
-builder.Services.AddScoped<IRequestOverrideRepository, RequestOverrideRepository>();
+builder.Services.AddScoped<IQrCodeRequestRepository, QrCodeRequestRepository>();
+builder.Services.AddScoped<IQrValidationRepository, QrValidationRepository>();
 
 
 // Service registrations

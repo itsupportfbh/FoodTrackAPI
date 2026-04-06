@@ -41,7 +41,7 @@ namespace CateringApi.Repositories.Implementations
 
         public async Task<List<RequestDropdownDto>> GetRequestIdDropdown()
         {
-            var list = await _context.RequestHeader.ToListAsync();
+            var list = await _context.RequestHeader.Where(x=>x.IsActive==true).ToListAsync();
 
 
 
@@ -160,13 +160,21 @@ namespace CateringApi.Repositories.Implementations
             return data;
         }
         //final
-        public QrResultDto GenerateQr(QrCodeRequest model)
+        public async Task<QrResultDto> GenerateQr(QrCodeRequest model)
         {
             if (model == null ||
-               model.RequestId <= 0 ||
+                model.RequestId <= 0 ||
                 string.IsNullOrWhiteSpace(model.CompanyName))
             {
-                return null; // ❗ don't throw exception
+                return null;
+            }
+
+            var requestHeader = await _context.RequestHeader
+                .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive == true);
+
+            if (requestHeader == null)
+            {
+                return null;
             }
 
             var qrDataObject = new
@@ -184,6 +192,13 @@ namespace CateringApi.Repositories.Implementations
 
             byte[] qrBytes = qrCode.GetGraphic(20);
 
+            // set IsActive = false after QR generated
+            requestHeader.IsActive = false;
+            requestHeader.UpdatedDate = DateTime.UtcNow; // if you have this column
+            requestHeader.UpdatedBy = model.UpdatedBy;   // if you have this column
+
+            await _context.SaveChangesAsync();
+
             return new QrResultDto
             {
                 Text = qrText,
@@ -193,7 +208,7 @@ namespace CateringApi.Repositories.Implementations
         }
 
 
-        public List<QrResultDto> GenerateUniqueQrs(QrCodeRequest model)
+        public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
         {
             var result = new List<QrResultDto>();
 
@@ -202,6 +217,15 @@ namespace CateringApi.Repositories.Implementations
                 model.CompanyId <= 0 ||
                 string.IsNullOrWhiteSpace(model.CompanyName) ||
                 model.NoofQR <= 0)
+            {
+                return result;
+            }
+
+            // Check RequestHeader is active
+            var requestHeader = await _context.RequestHeader
+                .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive == true);
+
+            if (requestHeader == null)
             {
                 return result;
             }
@@ -245,6 +269,15 @@ namespace CateringApi.Repositories.Implementations
                     IsUsed = false
                 });
             }
+
+            // After successful generation, update RequestHeader
+            requestHeader.IsActive = false;
+
+            // optional fields if available in your table
+            // requestHeader.UpdatedBy = model.UpdatedBy;
+            // requestHeader.UpdatedDate = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
 
             return result;
         }
