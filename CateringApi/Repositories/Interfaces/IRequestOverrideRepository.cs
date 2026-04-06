@@ -1,4 +1,5 @@
-﻿using CateringApi.DTOs.RequestOverride;
+﻿using CateringApi.DTOs.Common;
+using CateringApi.DTOs.RequestOverride;
 
 namespace CateringApi.Repositories.Interfaces
 {
@@ -6,7 +7,8 @@ namespace CateringApi.Repositories.Interfaces
     {
         Task<RequestOverrideScreenDto?> GetScreenDataAsync(int requestHeaderId, DateTime fromDate, DateTime toDate);
         Task<int> SaveAsync(SaveRequestOverrideDto dto);
-        Task<IEnumerable<dynamic>> GetOverrideListAsync(int requestHeaderId);
+        Task<List<RequestOverrideListDto>> GetOverrideList(int companyId);
+        Task<List<RequestOverrideLineDto>> GetOverrideLines(int requestOverrideId);
         Task DeleteAsync(int id, int updatedBy);
     }
 }

@@ -2,6 +2,7 @@
 using CateringApi.Repositories.Interfaces;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using System.Data;
 using System.Text.Json;
 
@@ -45,6 +46,8 @@ namespace CateringApi.Repositories.Implementations
 
         public async Task<int> SaveAsync(SaveRequestOverrideDto dto)
         {
+            Console.WriteLine("REPO SAVE HIT: " + DateTime.Now.ToString("HH:mm:ss.fff"));
+
             var param = new DynamicParameters();
             param.Add("@RequestHeaderId", dto.RequestHeaderId);
             param.Add("@FromDate", dto.FromDate.Date);
@@ -64,15 +67,35 @@ namespace CateringApi.Repositories.Implementations
                 param,
                 commandType: CommandType.StoredProcedure);
 
+            Console.WriteLine("REPO SAVE SUCCESS ID: " + result.Id);
+
             return (int)result.Id;
         }
-        public async Task<IEnumerable<dynamic>> GetOverrideListAsync(int requestHeaderId)
-    {
-        return await Connection.QueryAsync(
-            "dbo.sp_RequestOverride_ListByRequestHeader",
-            new { RequestHeaderId = requestHeaderId },
-            commandType: CommandType.StoredProcedure);
-    }
+        public async Task<List<RequestOverrideListDto>> GetOverrideList(int companyId)
+        {
+            
+
+            var result = await Connection.QueryAsync<RequestOverrideListDto>(
+                "sp_RequestOverride_ListByCompany",
+                new { CompanyId = companyId },
+                commandType: CommandType.StoredProcedure
+            );
+
+            return result.ToList();
+        }
+
+        public async Task<List<RequestOverrideLineDto>> GetOverrideLines(int requestOverrideId)
+        {
+           
+
+            var result = await Connection.QueryAsync<RequestOverrideLineDto>(
+                "sp_RequestOverride_LineListByOverrideId",
+                new { RequestOverrideId = requestOverrideId },
+                commandType: CommandType.StoredProcedure
+            );
+
+            return result.ToList();
+        }
         public async Task DeleteAsync(int id, int updatedBy)
         {
             await Connection.ExecuteAsync(

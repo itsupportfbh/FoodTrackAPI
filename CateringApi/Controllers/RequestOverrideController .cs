@@ -1,4 +1,5 @@
 ﻿using CateringApi.DTOs.RequestOverride;
+using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
@@ -29,28 +30,34 @@ public class RequestOverrideController : ControllerBase
     [HttpPost("save")]
     public async Task<IActionResult> Save([FromBody] SaveRequestOverrideDto dto)
     {
+        Console.WriteLine("CONTROLLER SAVE HIT: " + DateTime.Now.ToString("HH:mm:ss.fff"));
+
         var id = await _service.SaveAsync(dto);
+
+        Console.WriteLine("CONTROLLER SAVE SUCCESS ID: " + id);
 
         return Ok(new
         {
             isSuccess = true,
-            message = "Override saved successfully",
-            data = new { id }
+            id = id,
+            message = "Override saved successfully"
         });
     }
 
     [HttpGet("list")]
-    public async Task<IActionResult> GetList([FromQuery] int requestHeaderId)
+    public async Task<IActionResult> GetOverrideList([FromQuery] int companyId = 0)
     {
-        var data = await _service.GetOverrideListAsync(requestHeaderId);
-
-        return Ok(new
-        {
-            isSuccess = true,
-            message = "Success",
-            data
-        });
+        var result = await _service.GetOverrideList(companyId);
+        return Ok(result);
     }
+
+    [HttpGet("lines/{requestOverrideId}")]
+    public async Task<IActionResult> GetOverrideLines(int requestOverrideId)
+    {
+        var result = await _service.GetOverrideLines(requestOverrideId);
+        return Ok(result);
+    }
+
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id, [FromQuery] int updatedBy = 0)
     {
