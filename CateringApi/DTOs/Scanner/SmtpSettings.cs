@@ -27,4 +27,12 @@
         public bool IsUsed { get; set; }
         public DateTime? UsedDate { get; set; }
     }
+
+    public class SendQrEmailRequest
+    {
+        public int Id { get; set; }
+        public int RequestId { get; set; }
+        public int CompanyId { get; set; }
+        public string Email { get; set; }
+    }
 }
