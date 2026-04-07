@@ -6,4 +6,7 @@
         public bool IsAllowed { get; set; }
         public string Message { get; set; }
     }
+
+
+
 }

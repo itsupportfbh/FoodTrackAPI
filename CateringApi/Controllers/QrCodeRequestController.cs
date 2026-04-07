@@ -1,5 +1,6 @@
 ﻿using CateringApi.DTOModel;
 using CateringApi.DTOs.Scanner;
+using CateringApi.DTOs.Scanner.CateringApi.DTOs.Scanner;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -26,14 +27,31 @@ namespace CateringApi.Controllers
         {
             return _qrCodeRequestRepository.GetRequestIdDropdown();
         }
+        [HttpGet]
+        public async Task<IActionResult> DownloadQrZip(int requestId)
+        {
+            var result = await _qrCodeRequestRepository.DownloadQrZip(requestId);
 
+            if (result == null)
+                return NotFound("No QR images found for download");
+
+            return File(result.Value.ZipBytes, "application/zip", result.Value.FileName);
+        }
 
 
         [HttpGet]
-        public Task<List<QrCodeRequestModel>> GetAllQRModel()
+        public async Task<IActionResult> GetQrDetailsByRequestId(int requestId)
         {
-            return _qrCodeRequestRepository.GetAllQRModel();
+            var data = await _qrCodeRequestRepository.GetQrImageDetailsByRequestId(requestId);
+            return Ok(data);
         }
+       
+        [HttpGet]
+        public async Task<List<QrCodeRequestModel>> GetAllQRList()
+        {
+            return await _qrCodeRequestRepository.GetAllQRList();
+        }
+        
         [HttpGet]
         public Task<List<QrCodeRequestModel>> GetAllQRModelbyrequestId(int id, int requestId)
         {
@@ -46,11 +64,7 @@ namespace CateringApi.Controllers
             return _qrCodeRequestRepository.GetAllQRModelbyId(id);
         }
         
-        [HttpPost]
-        public async Task<QrResultDto> GenerateQr(QrCodeRequest model)
-        {
-            return await _qrCodeRequestRepository.GenerateQr(model);
-        }
+        
 
         [HttpPost]
         public async Task<IActionResult> SendQrEmail([FromBody] SendEmailDto model)
@@ -81,7 +95,39 @@ namespace CateringApi.Controllers
         {
             return  await _qrvalidationrepo.ValidateScanAsync(uniqueCode); 
         }
+        [HttpDelete("DeleteQR/{id}")]
+        public async Task<IActionResult> DeleteQR(int id, [FromQuery] int userId)
+        {
+            var data = await _qrCodeRequestRepository.DeleteQrCode(id, userId);
 
+            if (data == null)
+            {
+                return NotFound(new { message = "QR record not found" });
+            }
+
+            return Ok(new
+            {
+                message = "QR record deleted successfully",
+                data
+            });
+
+
+            //[HttpGet]
+            //public async Task<List<QrCodeRequest>> GetAllQR()
+            //{
+            //    return await _qrCodeRequestRepository.GetAllQR();
+            //}
+            //[HttpGet]
+            //public Task<List<QrCodeRequest>> GetAllQRModel()
+            //{
+            //    return _qrCodeRequestRepository.GetAllQRModel();
+            //}
+            //[HttpPost]
+            //public async Task<QrResultDto> GenerateQr(QrCodeRequest model)
+            //{
+            //    return await _qrCodeRequestRepository.GenerateQr(model);
+            //}
+        }
 
 
 

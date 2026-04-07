@@ -2,12 +2,15 @@
 using CateringApi.DTOModel;
 using CateringApi.DTOs.Master;
 using CateringApi.DTOs.Scanner;
+using CateringApi.DTOs.Scanner.CateringApi.DTOs.Scanner;
 using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using QRCoder;
 using System.ComponentModel;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Mail;
 using System.Text.Json;
@@ -28,46 +31,76 @@ namespace CateringApi.Repositories.Implementations
             _smtpSettings = smtpOptions.Value;
         }
 
-        public async Task<List<QrCodeRequest>> GetAllQR()
+        
+
+        public async Task<List<QrCodeRequestModel>> GetAllQRList()
         {
-            return await _context.QrCodeRequest.ToListAsync();
+            var result = await (
+                from qr in _context.QrCodeRequest
+                join rh in _context.RequestHeader on qr.RequestId equals rh.Id
+                join cm in _context.CompanyMaster on qr.CompanyId equals cm.Id
+                where qr.IsActive == true
+                select new QrCodeRequestModel
+                {
+                    Id = qr.Id,
+                    CompanyId = qr.CompanyId,
+                    CompanyName = cm.CompanyName,
+                    CompanyEmail = cm.Email,
+                    RequestId = qr.RequestId,
+                    RequestNo = rh.RequestNo,
+                    NoofQR = qr.NoofQR,
+                    QRValidFrom = qr.QRValidFrom,
+                    QRValidTill = qr.QRValidTill,
+                    IsActive = qr.IsActive,
+                    CreatedDate = qr.CreatedDate,
+                    UpdatedDate = qr.UpdatedDate,
+                    CreatedBy = qr.CreatedBy,
+                    UpdatedBy = qr.UpdatedBy,
+
+                    QrImages = _context.QrImage
+                        .Where(x => x.Qrcoderequestid == qr.Id && x.IsActive)
+                        .Select(x => new QrImageModel
+                        {
+                            Id = x.Id,
+                            Qrcoderequestid = x.Qrcoderequestid,
+                            QrCodeImageBase64 = x.QrCodeImage != null ? Convert.ToBase64String(x.QrCodeImage) : null,
+                            QrCodeText = x.QrCodeText,
+                            SerialNo = x.SerialNo,
+                            UniqueCode = x.UniqueCode,
+                            IsUsed = x.IsUsed,
+                            UsedDate = x.UsedDate,
+                            IsActive = x.IsActive,
+                            CreatedDate = x.CreatedDate,
+                            CreatedBy = x.CreatedBy,
+                            UpdatedBy = x.UpdatedBy,
+                            UpdatedDate = x.UpdatedDate
+                        }).ToList()
+                }
+            ).OrderByDescending(x=>x.CreatedDate).ToListAsync();
+
+            return result;
         }
-
-        //public async Task<List<RequestModel>> GetAllDetallstogenerateQR( int id)
-        //{
-        //    var result=_context.Request.Where(x=>x.RequestId==id).
-        //}
-
 
         public async Task<List<RequestDropdownDto>> GetRequestIdDropdown()
         {
-            var list = await _context.RequestHeader.Where(x=>x.IsActive==true).ToListAsync();
-
-
-
-
-            var result = await (from r in _context.RequestHeader
-                                join c in _context.CompanyMaster
-                                on r.CompanyId equals c.Id
-                                where r.IsActive
-                                select new RequestDropdownDto
-                                {
-
-                                    RequestId = Convert.ToInt32(r.Id),
-                                    RequestNo = r.RequestNo,
-
-                                    CompanyId = r.CompanyId,
-
-                                    // ✅ From Company table
-                                    CompanyName = c.CompanyName,
-                                    CompanyEmail = c.Email,
-
-                                    // ✅ From Request table
-                                    Qty = Convert.ToInt32(r.TotalQty),
-                                    FromDate = r.FromDate,
-                                    TillDate = r.ToDate
-                                })
-                          .ToListAsync();
+            var result = await (
+                from r in _context.RequestHeader
+                join c in _context.CompanyMaster
+                    on r.CompanyId equals c.Id
+                where r.IsActive
+                      && !_context.QrCodeRequest.Any(q => q.RequestId == r.Id)
+                select new RequestDropdownDto
+                {
+                    RequestId = Convert.ToInt32(r.Id),
+                    RequestNo = r.RequestNo,
+                    CompanyId = r.CompanyId,
+                    CompanyName = c.CompanyName,
+                    CompanyEmail = c.Email,
+                    Qty = Convert.ToInt32(r.TotalQty),
+                    FromDate = r.FromDate,
+                    TillDate = r.ToDate
+                }
+            ).ToListAsync();
 
             return result;
         }
@@ -76,29 +109,45 @@ namespace CateringApi.Repositories.Implementations
             var data = await _context.QrCodeRequest
                 .Select(a => new QrCodeRequestModel
                 {
-                    Id = a.Id,
-                    CompanyId = a.CompanyId,
-                    CompanyName = a.CompanyName,
-                    CompanyEmail = a.CompanyEmail,
-                    RequestId = a.RequestId,
-                    NoofQR = a.NoofQR,
-
-                    QRValidFrom = a.QRValidFrom,
-                    QRValidTill = a.QRValidTill,
-                    IsActive = a.IsActive,
-                    CreatedDate = a.CreatedDate,
-                    UpdatedDate = a.UpdatedDate,
-                    CreatedBy = a.CreatedBy,
-                    UpdatedBy = a.UpdatedBy
+                    Id = a.Id
                 })
                 .ToListAsync();
-
-            // ✅ Convert image to Base64 AFTER fetching from DB
-           
-
             return data;
-        }
 
+        }
+        public async Task<QrCodeRequestModel> DeleteQrCode(int id, int userId)
+        {
+            var entity = await _context.QrCodeRequest
+                .FirstOrDefaultAsync(x => x.Id == id && x.IsActive == true);
+
+            if (entity == null)
+            {
+                return null;
+            }
+
+            entity.IsActive = false;
+            entity.UpdatedBy = userId;
+            entity.UpdatedDate = DateTime.Now;
+
+            await _context.SaveChangesAsync();
+
+            return new QrCodeRequestModel
+            {
+                Id = entity.Id,
+                CompanyId = entity.CompanyId,
+                CompanyName = entity.CompanyName,
+                CompanyEmail = entity.CompanyEmail,
+                RequestId = entity.RequestId,
+                NoofQR = entity.NoofQR,
+                QRValidFrom = entity.QRValidFrom,
+                QRValidTill = entity.QRValidTill,
+                IsActive = entity.IsActive,
+                CreatedDate = entity.CreatedDate,
+                UpdatedDate = entity.UpdatedDate,
+                CreatedBy = entity.CreatedBy,
+                UpdatedBy = entity.UpdatedBy
+            };
+        }
         public async Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id)
         {
             return await _context.QrCodeRequest
@@ -159,54 +208,7 @@ namespace CateringApi.Repositories.Implementations
 
             return data;
         }
-        //final
-        public async Task<QrResultDto> GenerateQr(QrCodeRequest model)
-        {
-            if (model == null ||
-                model.RequestId <= 0 ||
-                string.IsNullOrWhiteSpace(model.CompanyName))
-            {
-                return null;
-            }
-
-            var requestHeader = await _context.RequestHeader
-                .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive == true);
-
-            if (requestHeader == null)
-            {
-                return null;
-            }
-
-            var qrDataObject = new
-            {
-                model.RequestId,
-                model.CompanyId,
-                model.CompanyName
-            };
-
-            string qrText = JsonSerializer.Serialize(qrDataObject);
-
-            using var qrGenerator = new QRCodeGenerator();
-            var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.Q);
-            var qrCode = new PngByteQRCode(qrData);
-
-            byte[] qrBytes = qrCode.GetGraphic(20);
-
-            // set IsActive = false after QR generated
-            requestHeader.IsActive = false;
-            requestHeader.UpdatedDate = DateTime.UtcNow; // if you have this column
-            requestHeader.UpdatedBy = model.UpdatedBy;   // if you have this column
-
-            await _context.SaveChangesAsync();
-
-            return new QrResultDto
-            {
-                Text = qrText,
-                ImageBytes = qrBytes,
-                ImageBase64 = Convert.ToBase64String(qrBytes)
-            };
-        }
-
+        
 
         public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
         {
@@ -271,7 +273,7 @@ namespace CateringApi.Repositories.Implementations
             }
 
             // After successful generation, update RequestHeader
-            requestHeader.IsActive = false;
+           // requestHeader.IsActive = false;
 
             // optional fields if available in your table
             // requestHeader.UpdatedBy = model.UpdatedBy;
@@ -281,6 +283,130 @@ namespace CateringApi.Repositories.Implementations
 
             return result;
         }
+
+        public async Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int requestId)
+        {
+            var requestData = await (
+                from q in _context.QrCodeRequest
+                join r in _context.RequestHeader
+                    on q.RequestId equals r.Id
+                join c in _context.CompanyMaster
+                    on q.CompanyId equals c.Id into companyJoin
+                from c in companyJoin.DefaultIfEmpty()
+                where q.RequestId == requestId
+                select new QrRequestWithImagesDto
+                {
+                    Id = q.Id,
+                    RequestId = q.RequestId,
+                    CompanyId = q.CompanyId,
+                    CompanyName = c != null ? c.CompanyName : null,
+                    CompanyEmail = c != null ? c.Email : null,
+                    RequestNo = r.RequestNo,
+                    NoOfQR = q.NoofQR,
+                    QrValidFrom = q.QRValidFrom,
+                    QrValidTill = q.QRValidTill
+                }
+            ).FirstOrDefaultAsync();
+
+            if (requestData == null)
+                return null;
+
+            var qrImages = await _context.QrImage
+     .Where(x => x.Qrcoderequestid == requestData.Id && x.IsActive)
+     .OrderBy(x => x.SerialNo)
+     .Select(x => new QrImageItemDto
+     {
+         Id = x.Id,
+         QrCodeRequestId = x.Qrcoderequestid,
+         QrCodeText = x.QrCodeText,
+         SerialNo = x.SerialNo,
+         UniqueCode = x.UniqueCode,
+         IsUsed = x.IsUsed,
+         UsedDate = x.UsedDate,
+         IsActive = x.IsActive,
+         CreatedDate = x.CreatedDate,
+         QrCodeImageBase64 = x.QrCodeImage != null
+             ? Convert.ToBase64String(x.QrCodeImage)
+             : null
+     })
+     .ToListAsync();
+            
+            
+            requestData.QrImages = qrImages;
+
+            return requestData;
+        }
+
+        public async Task<(byte[] ZipBytes, string FileName)?> DownloadQrZip(int requestId)
+    {
+        var data = await GetQrImageDetailsByRequestId(requestId);
+
+        if (data == null)
+            return null;
+
+        if (data.QrImages == null || !data.QrImages.Any())
+            return null;
+
+        var validImages = data.QrImages
+            .Where(x => !string.IsNullOrWhiteSpace(x.QrCodeImageBase64))
+            .ToList();
+
+        if (!validImages.Any())
+            return null;
+
+        using var memoryStream = new MemoryStream();
+
+        using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, true))
+        {
+            int addedCount = 0;
+
+            foreach (var img in validImages)
+            {
+                try
+                {
+                    var base64 = img.QrCodeImageBase64!.Trim();
+
+                    if (base64.StartsWith("data:image", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var commaIndex = base64.IndexOf(',');
+                        if (commaIndex >= 0)
+                            base64 = base64.Substring(commaIndex + 1);
+                    }
+
+                    base64 = base64.Replace(" ", "")
+                                   .Replace("\r", "")
+                                   .Replace("\n", "");
+
+                    var imageBytes = Convert.FromBase64String(base64);
+
+                    if (imageBytes == null || imageBytes.Length == 0)
+                        continue;
+
+                    var serialNo = img.SerialNo.HasValue ? img.SerialNo.Value.ToString() : (addedCount + 1).ToString();
+                    var entryFileName = $"{data.RequestNo ?? "qr"}-{serialNo}.png";
+
+                    var entry = archive.CreateEntry(entryFileName, CompressionLevel.Fastest);
+
+                    using var entryStream = entry.Open();
+                    await entryStream.WriteAsync(imageBytes, 0, imageBytes.Length);
+
+                    addedCount++;
+                }
+                catch
+                {
+                    continue;
+                }
+            }
+
+            if (addedCount == 0)
+                return null;
+        }
+
+        memoryStream.Position = 0;
+
+            var zipFileName = $"CSPL-{data.CompanyName?? "qr-images"}.zip";
+            return (memoryStream.ToArray(), zipFileName);
+    }
 
         public async Task<bool> SendQrEmailAsync(SendEmailDto model)
         {
@@ -432,9 +558,7 @@ namespace CateringApi.Repositories.Implementations
                 throw new Exception("Email sending failed: " + ex.Message);
             }
         }
-
-        /// Add or update QR request and save all generated QR images
-        /// </summary>//final
+              
         public async Task<QrCodeRequestModel> AddUpdateQrWithImagesAsync(QrCodeRequestModel model)
         {
             if (model == null)
@@ -569,7 +693,27 @@ namespace CateringApi.Repositories.Implementations
                 throw;
             }
         }
-       
+
+        //public Task<QrResultDto> GenerateQr(QrCodeRequest model)
+        //{
+        //    throw new NotImplementedException();
+        //}
+
+        //Task<List<QrCodeRequest>> IQrCodeRequestRepository.GetAllQRModel()
+        //{
+        //    throw new NotImplementedException();
+        //}
+
+        //public async Task<List<QrCodeRequest>> GetAllQR()
+        //{
+        //    return await _context.QrCodeRequest.ToListAsync();
+        //}
+
+        //public async Task<List<RequestModel>> GetAllDetallstogenerateQR( int id)
+        //{
+        //    var result=_context.Request.Where(x=>x.RequestId==id).
+        //}
+
     }
 
 
