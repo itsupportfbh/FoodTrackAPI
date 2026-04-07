@@ -90,10 +90,10 @@ namespace CateringApi.Controllers
         {
             return await _qrCodeRequestRepository.GenerateUniqueQrs(model);
         }
-        [HttpPost]
-        public async Task<QrValidationResult> ValidateScanAsync(string uniqueCode)
+        [HttpGet]
+        public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode, int RequestId, int CompanyId)
         {
-            return  await _qrvalidationrepo.ValidateScanAsync(uniqueCode); 
+            return  await _qrvalidationrepo.ValidateScanAsync(UniqueCode, RequestId, CompanyId); 
         }
         [HttpDelete("DeleteQR/{id}")]
         public async Task<IActionResult> DeleteQR(int id, [FromQuery] int userId)
