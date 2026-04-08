@@ -37,35 +37,32 @@ namespace CateringApi.Repositories.Implementations
             await _context.SaveChangesAsync();
         }
 
-        public async Task DeactivateRequestAndImagesAsync(int requestId)
+        public async Task DeactivateRequestAndImagesAsync(int Qrcoderequestid, string UniqueCode)
         {
-            var request = await _context.RequestHeader.FindAsync(requestId);
-            if (request != null)
-                request.IsActive = false;
-
             var images = await _context.QrImage
-                .Where(q => q.Qrcoderequestid == requestId)
-                .ToListAsync();
+                .Where(q => q.Qrcoderequestid == Qrcoderequestid && q.UniqueCode == UniqueCode).FirstOrDefaultAsync();
 
-            foreach (var img in images)
-                img.IsActive = false;
+            if (images != null)
+            {
+                images.IsActive = false;
+            }
 
             await _context.SaveChangesAsync();
         }
 
-        public async Task<QrValidationResult> ValidateScanAsync(string uniqueCode)
+        public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode, int RequestId, int CompanyId)
         {
-            var qrImage = GetQrImageByUniqueCode(uniqueCode);
+            var qrImage = GetQrImageByUniqueCode(UniqueCode);
 
             if (qrImage == null || qrImage.Id == 0)
                 return Fail("Invalid QR code.");
 
-            var request = await GetQrRequestByIdAsync(qrImage.Qrcoderequestid);
+            var request = await GetQrRequestByIdAsync(RequestId);
 
             if (request == null)
                 return Fail("QR request not found.");
 
-            var now = DateTime.UtcNow;
+            var now = DateTime.Now;
 
             // 1. Check request date range
             if (now < request.FromDate)
@@ -73,7 +70,7 @@ namespace CateringApi.Repositories.Implementations
 
             if (now > request.ToDate)
             {
-                await DeactivateRequestAndImagesAsync(request.Id.Value);
+                await DeactivateRequestAndImagesAsync(qrImage.Qrcoderequestid, UniqueCode);
                 return Fail("QR validity period has ended. Access denied.");
             }
 

@@ -68,7 +68,6 @@ builder.Services.AddScoped<IMealTypeRepository, MealTypeRepository>();
 builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
 builder.Services.AddScoped<IMealPlanRepository, MealPlanRepository>();
 builder.Services.AddScoped<IMealScanRepository, MealScanRepository>();
-builder.Services.AddScoped<IReportsRepository, ReportsRepository>();
 builder.Services.AddScoped<ICuisineRepository, CuisineRepository>();
 builder.Services.AddScoped<ILocationRepository, LocationRepository>();
 builder.Services.AddScoped<ISessionRepository, SessionRepository>();
@@ -79,7 +78,6 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IQrCodeRequestRepository, QrCodeRequestRepository>();
 builder.Services.AddScoped<IQrValidationRepository, QrValidationRepository>();
 builder.Services.AddScoped<IRequestOverrideRepository, RequestOverrideRepository>();
-builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 
 
 // Service registrations
