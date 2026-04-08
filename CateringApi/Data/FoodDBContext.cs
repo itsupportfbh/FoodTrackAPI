@@ -1,8 +1,12 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using CateringApi.DTOs.Company;
+using CateringApi.DTOs.Item;
 using CateringApi.DTOs.Master;
+using CateringApi.DTOs.Request;
 using CateringApi.DTOs.Scanner;
-using CateringApi.DTOs.Company;
 using CateringApi.Models;
+using Microsoft.EntityFrameworkCore;
+using CateringApi.DTOModel;
+using static System.Collections.Specialized.BitVector32;
 
 namespace CateringApi.Data
 {
@@ -16,7 +20,10 @@ namespace CateringApi.Data
         public DbSet<SiteSettings> SiteSettings { get; set; }
         public DbSet<QrCodeRequest> QrCodeRequest {  get; set; }
         public DbSet<RequestHeader> RequestHeader { get; set; }
+        public DbSet<RequestDetail> RequestDetail { get; set; }
         public DbSet<CompanyMaster>CompanyMaster { get; set; }
+        //public DbSet<SessionDTO> Sessions { get; set; }
+        public DbSet<Session> Session { get; set; }
         public DbSet<QrImage> QrImage { get; set; }
        
     }
