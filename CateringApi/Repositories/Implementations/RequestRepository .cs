@@ -117,7 +117,10 @@ SELECT
 FROM dbo.RequestHeader rh
 INNER JOIN dbo.CompanyMaster c ON c.Id = rh.CompanyId
 WHERE rh.IsActive = 1
-  AND (@RoleId = 1 OR rh.CompanyId = @CompanyId)
+  AND (
+        (@RoleId = 2 AND rh.CompanyId = @CompanyId)
+        OR (@RoleId <> 2)
+      )
 ORDER BY rh.Id DESC;";
 
             return await con.QueryAsync<RequestDto>(sql, new
