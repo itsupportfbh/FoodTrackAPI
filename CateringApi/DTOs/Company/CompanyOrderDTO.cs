@@ -5,5 +5,6 @@
         public int CompanyId { get; set; }
         public string CompanyName { get; set; }
         public decimal TotalQty { get; set; }
+        public decimal RedeemQty { get; set; }
     }
 }
