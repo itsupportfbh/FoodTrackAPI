@@ -136,29 +136,55 @@ WHERE Id = @UserId
 
             // 🔹 MAIN REPORT
             const string mainSql = @"
+;WITH DateSeries AS
+(
+    SELECT
+        rh.Id AS RequestHeaderId,
+        CAST(rh.FromDate AS date) AS ReportDate,
+        CAST(rh.ToDate AS date) AS EndDate
+    FROM dbo.RequestHeader rh
+    WHERE rh.IsActive = 1
+
+    UNION ALL
+
+    SELECT
+        ds.RequestHeaderId,
+        DATEADD(DAY, 1, ds.ReportDate),
+        ds.EndDate
+    FROM DateSeries ds
+    WHERE ds.ReportDate < ds.EndDate
+)
 SELECT
     cm.CompanyName,
-    rh.FromDate AS ReportDate,
+    ds.ReportDate,
     s.SessionName,
     cu.CuisineName,
     l.LocationName,
     SUM(rd.Qty) AS Count
-FROM dbo.RequestHeader rh
-INNER JOIN dbo.RequestDetail rd ON rd.RequestHeaderId = rh.Id AND rd.IsActive = 1
-INNER JOIN dbo.CompanyMaster cm ON cm.Id = rh.CompanyId
-INNER JOIN dbo.Session s ON s.Id = rd.SessionId
-INNER JOIN dbo.CuisineMaster cu ON cu.Id = rd.CuisineId
-INNER JOIN dbo.Location l ON l.Id = rd.LocationId
+FROM DateSeries ds
+INNER JOIN dbo.RequestHeader rh
+    ON rh.Id = ds.RequestHeaderId
+INNER JOIN dbo.RequestDetail rd
+    ON rd.RequestHeaderId = rh.Id
+   AND rd.IsActive = 1
+INNER JOIN dbo.CompanyMaster cm
+    ON cm.Id = rh.CompanyId
+INNER JOIN dbo.Session s
+    ON s.Id = rd.SessionId
+INNER JOIN dbo.CuisineMaster cu
+    ON cu.Id = rd.CuisineId
+INNER JOIN dbo.Location l
+    ON l.Id = rd.LocationId
 WHERE rh.IsActive = 1
   AND (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
-  AND (@FromDate IS NULL OR rh.FromDate >= @FromDate)
-  AND (@ToDate IS NULL OR rh.ToDate <= @ToDate)
+  AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
+  AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
   AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
   AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
   AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
 GROUP BY
     cm.CompanyName,
-    rh.FromDate,
+    ds.ReportDate,
     s.Id,
     s.SessionName,
     cu.Id,
@@ -166,28 +192,54 @@ GROUP BY
     l.Id,
     l.LocationName
 ORDER BY
-    rh.FromDate DESC,
+    cm.CompanyName,
+    ds.ReportDate DESC,
     s.Id,
     cu.Id,
-    l.Id;";
+    l.Id
+OPTION (MAXRECURSION 366);";
 
             // 🔥 FOOD TOTAL (NEW)
             const string totalSql = @"
+;WITH DateSeries AS
+(
+    SELECT
+        rh.Id AS RequestHeaderId,
+        CAST(rh.FromDate AS date) AS ReportDate,
+        CAST(rh.ToDate AS date) AS EndDate
+    FROM dbo.RequestHeader rh
+    WHERE rh.IsActive = 1
+
+    UNION ALL
+
+    SELECT
+        ds.RequestHeaderId,
+        DATEADD(DAY, 1, ds.ReportDate),
+        ds.EndDate
+    FROM DateSeries ds
+    WHERE ds.ReportDate < ds.EndDate
+)
 SELECT
     cu.CuisineName,
     SUM(rd.Qty) AS TotalQty
-FROM dbo.RequestHeader rh
-INNER JOIN dbo.RequestDetail rd ON rd.RequestHeaderId = rh.Id AND rd.IsActive = 1
-INNER JOIN dbo.CuisineMaster cu ON cu.Id = rd.CuisineId
+FROM DateSeries ds
+INNER JOIN dbo.RequestHeader rh
+    ON rh.Id = ds.RequestHeaderId
+INNER JOIN dbo.RequestDetail rd
+    ON rd.RequestHeaderId = rh.Id
+   AND rd.IsActive = 1
+INNER JOIN dbo.CuisineMaster cu
+    ON cu.Id = rd.CuisineId
 WHERE rh.IsActive = 1
   AND (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
-  AND (@FromDate IS NULL OR rh.FromDate >= @FromDate)
-  AND (@ToDate IS NULL OR rh.ToDate <= @ToDate)
+  AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
+  AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
   AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
   AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
   AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
 GROUP BY cu.CuisineName
-ORDER BY cu.CuisineName;";
+ORDER BY cu.CuisineName
+OPTION (MAXRECURSION 366);";
 
             var rows = await con.QueryAsync<ReportByDateRowDto>(mainSql, new
             {

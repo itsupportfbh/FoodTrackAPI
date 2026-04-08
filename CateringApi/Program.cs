@@ -78,8 +78,8 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IQrCodeRequestRepository, QrCodeRequestRepository>();
 builder.Services.AddScoped<IQrValidationRepository, QrValidationRepository>();
 builder.Services.AddScoped<IRequestOverrideRepository, RequestOverrideRepository>();
-builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
-
+builder.Services.AddScoped<IDashboardRepository,DashboardRepository>();
+builder.Services.AddScoped<IReportRepository, ReportRepository>();
 
 // Service registrations
 builder.Services.AddScoped<IJwtService, JwtService>();
