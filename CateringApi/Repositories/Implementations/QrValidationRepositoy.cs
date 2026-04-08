@@ -1,4 +1,5 @@
 ﻿using CateringApi.Data;
+using CateringApi.DTOModel;
 using CateringApi.DTOs.Scanner;
 using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
@@ -52,6 +53,24 @@ namespace CateringApi.Repositories.Implementations
 
         public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode, int RequestId, int CompanyId)
         {
+
+
+            var sessionList1 = await (from ss in _context.Session
+                                     join rd in _context.RequestDetail on ss.Id equals rd.SessionId
+                                     where rd.RequestHeaderId == RequestId
+
+                                     select new
+                                     {
+                                         SessionId = ss.Id,
+                                         RequestId = RequestId,
+                                         FromTime = ss.FromTime,
+                                         ToTime = ss.ToTime
+                                     }
+                                     ).ToListAsync();
+
+
+            var now = DateTime.Now;
+
             var qrImage = GetQrImageByUniqueCode(UniqueCode);
 
             if (qrImage == null || qrImage.Id == 0)
@@ -62,7 +81,6 @@ namespace CateringApi.Repositories.Implementations
             if (request == null)
                 return Fail("QR request not found.");
 
-            var now = DateTime.Now;
 
             // 1. Check request date range
             if (now < request.FromDate)
@@ -83,7 +101,18 @@ namespace CateringApi.Repositories.Implementations
             {
                 var minutesSinceLastUse = (now - qrImage.UsedDate.Value).TotalMinutes;
 
-                var SiteSettings = _context.SiteSettings.ToList();
+                var sessionList = await (from ss in _context.Session
+                                         join rd in _context.RequestDetail on ss.Id equals rd.SessionId
+                                         where rd.RequestHeaderId == RequestId
+
+                                         select new
+                                         {
+                                             SessionId = ss.Id,
+                                             RequestId = RequestId,
+                                             FromTime = ss.FromTime,
+                                             ToTime = ss.ToTime
+                                         }
+                                         ).ToListAsync();
 
                 if (minutesSinceLastUse < 60)
                 {
