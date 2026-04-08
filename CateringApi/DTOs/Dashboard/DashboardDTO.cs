@@ -12,5 +12,7 @@ namespace CateringApi.DTOs.Dashboard
         public List<SessionOrderDTO> TotalOrdersBySession { get; set; }
         public List<CompanyOrderDTO> TotalcompanyWiseOrders { get; set; }
         public List<LatestQrDTO> TotallatestUsedQRs { get; set; }
+        public int TodayScans { get; set; }
+        public int YesterdayScans { get; set; }
     }
 }
