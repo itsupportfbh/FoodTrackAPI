@@ -21,6 +21,7 @@
         public string CreatedBy { get; set; }          // Optional creator
         public string UpdatedBy { get; set; }          // Optional updater
         public DateTime? UpdatedDate { get; set; }
+        public int? QRScannedCount { get; set; }
     }
 
     namespace CateringApi.DTOs.Scanner

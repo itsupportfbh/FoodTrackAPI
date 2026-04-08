@@ -1,4 +1,5 @@
 ﻿using CateringApi.Data;
+using CateringApi.DTOModel;
 using CateringApi.DTOs.Scanner;
 using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
@@ -34,6 +35,8 @@ namespace CateringApi.Repositories.Implementations
 
             qr.IsUsed = true;
             qr.UsedDate = usedDate;
+            qr.QRScannedCount = (qr.QRScannedCount ?? 0) + 1;
+
             await _context.SaveChangesAsync();
         }
 
@@ -52,6 +55,9 @@ namespace CateringApi.Repositories.Implementations
 
         public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode, int RequestId, int CompanyId)
         {
+
+            var now = DateTime.Now;
+
             var qrImage = GetQrImageByUniqueCode(UniqueCode);
 
             if (qrImage == null || qrImage.Id == 0)
@@ -62,7 +68,6 @@ namespace CateringApi.Repositories.Implementations
             if (request == null)
                 return Fail("QR request not found.");
 
-            var now = DateTime.Now;
 
             // 1. Check request date range
             if (now < request.FromDate)
@@ -78,17 +83,63 @@ namespace CateringApi.Repositories.Implementations
             if (!qrImage.IsActive)
                 return Fail("This QR code is no longer active.");
 
-            // 3. Check 1-hour cooldown
+            // 3. Check session time window for this request
+            var sessionList = await (from ss in _context.Session
+                                      join rd in _context.RequestDetail on ss.Id equals rd.SessionId
+                                      where rd.RequestHeaderId == RequestId && ss.IsActive && rd.IsActive
+                                      select new
+                                      {
+                                          ss.Id,
+                                          ss.SessionName,
+                                          ss.FromTime,
+                                          ss.ToTime
+                                      }).ToListAsync();
+
+            // Determine which sessions currently apply (compare only hours and minutes, ignore seconds)
+            var nowTime = now.TimeOfDay;
+            var nowTimeTrimmed = new TimeSpan(nowTime.Hours, nowTime.Minutes, 0);
+
+            var matchingSessions = sessionList.Where(s => s.FromTime.HasValue && s.ToTime.HasValue &&
+            (
+                // normal range: From <= To
+                (new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0) <= new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0)
+                    && nowTimeTrimmed >= new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0)
+                    && nowTimeTrimmed <= new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0))
+                // overnight range: From > To (e.g., 23:00 - 02:00)
+                || (new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0) > new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0)
+                    && (nowTimeTrimmed >= new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0)
+                        || nowTimeTrimmed <= new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0))))
+            ).ToList();
+
+            if (!matchingSessions.Any())
+                return Fail("Scanning not allowed at this time for the request's session.");
+
+            // If scanning is within a session window, ensure this QR hasn't already been used for the same session
             if (qrImage.IsUsed && qrImage.UsedDate.HasValue)
             {
-                var minutesSinceLastUse = (now - qrImage.UsedDate.Value).TotalMinutes;
+                var usedTime = qrImage.UsedDate.Value.TimeOfDay;
+                var usedTimeTrimmed = new TimeSpan(usedTime.Hours, usedTime.Minutes, 0);
 
-             
-
-                if (minutesSinceLastUse < 60)
+                foreach (var s in matchingSessions)
                 {
-                    var waitMinutes = (int)Math.Ceiling(60 - minutesSinceLastUse);
-                    return Fail($"Meal already collected. Please wait {waitMinutes} minute(s) before scanning again.");
+                    if (!s.FromTime.HasValue || !s.ToTime.HasValue)
+                        continue;
+
+                    var fromTrimmed = new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0);
+                    var toTrimmed = new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0);
+
+                    // normal range: From <= To
+                    if (fromTrimmed <= toTrimmed)
+                    {
+                        if (usedTimeTrimmed >= fromTrimmed && usedTimeTrimmed <= toTrimmed)
+                            return Fail("Meal already collected for this session.");
+                    }
+                    else
+                    {
+                        // overnight range: From > To (e.g., 23:00 - 02:00)
+                        if (usedTimeTrimmed >= fromTrimmed || usedTimeTrimmed <= toTrimmed)
+                            return Fail("Meal already collected for this session.");
+                    }
                 }
             }
 
