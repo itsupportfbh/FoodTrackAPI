@@ -83,7 +83,7 @@ namespace CateringApi.Repositories.Implementations
             {
                 var minutesSinceLastUse = (now - qrImage.UsedDate.Value).TotalMinutes;
 
-             
+                var SiteSettings = _context.SiteSettings.ToList();
 
                 if (minutesSinceLastUse < 60)
                 {

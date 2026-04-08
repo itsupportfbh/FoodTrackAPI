@@ -83,12 +83,13 @@ namespace CateringApi.Repositories.Implementations
 
         public async Task<List<RequestDropdownDto>> GetRequestIdDropdown()
         {
+
             var result = await (
                 from r in _context.RequestHeader
                 join c in _context.CompanyMaster
                     on r.CompanyId equals c.Id
                 where r.IsActive
-                      && !_context.QrCodeRequest.Any(q => q.RequestId == r.Id)
+                      && !_context.QrCodeRequest.Any(q => q.IsActive && q.RequestId == r.Id && q.CompanyId == r.CompanyId)
                 select new RequestDropdownDto
                 {
                     RequestId = Convert.ToInt32(r.Id),
