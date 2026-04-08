@@ -10,6 +10,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using QRCoder;
 using System.ComponentModel;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Mail;
@@ -24,11 +27,12 @@ namespace CateringApi.Repositories.Implementations
         private readonly FoodDBContext _context;
         private readonly SmtpSettings _smtpSettings;
 
-
-        public QrCodeRequestRepository(FoodDBContext context, IOptions<SmtpSettings> smtpOptions)
+        private readonly IWebHostEnvironment _env;
+        public QrCodeRequestRepository(FoodDBContext context, IOptions<SmtpSettings> smtpOptions, IWebHostEnvironment env)
         {
             _context = context;
             _smtpSettings = smtpOptions.Value;
+            _env = env;
         }
 
         
@@ -209,7 +213,46 @@ namespace CateringApi.Repositories.Implementations
 
             return data;
         }
-        
+
+        private byte[] AddLogoToQr(byte[] qrBytes, string logoPath)
+        {
+            if (!System.IO.File.Exists(logoPath))
+                return qrBytes;
+
+            using var qrMs = new MemoryStream(qrBytes);
+            using var qrBitmap = new Bitmap(qrMs);
+            using var logoBitmap = new Bitmap(logoPath);
+            using var finalBitmap = new Bitmap(qrBitmap.Width, qrBitmap.Height);
+
+            using (var graphics = Graphics.FromImage(finalBitmap))
+            {
+                graphics.Clear(Color.White);
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.SmoothingMode = SmoothingMode.HighQuality;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+
+                graphics.DrawImage(qrBitmap, 0, 0, qrBitmap.Width, qrBitmap.Height);
+
+                int logoSize = (int)(qrBitmap.Width * 0.18);
+                int logoX = (qrBitmap.Width - logoSize) / 2;
+                int logoY = (qrBitmap.Height - logoSize) / 2;
+                int padding = 8;
+
+                graphics.FillEllipse(
+                    Brushes.White,
+                    logoX - padding,
+                    logoY - padding,
+                    logoSize + (padding * 2),
+                    logoSize + (padding * 2)
+                );
+
+                graphics.DrawImage(logoBitmap, logoX, logoY, logoSize, logoSize);
+            }
+
+            using var outputMs = new MemoryStream();
+            finalBitmap.Save(outputMs, ImageFormat.Png);
+            return outputMs.ToArray();
+        }
 
         public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
         {
@@ -224,7 +267,6 @@ namespace CateringApi.Repositories.Implementations
                 return result;
             }
 
-            // Check RequestHeader is active
             var requestHeader = await _context.RequestHeader
                 .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive == true);
 
@@ -235,50 +277,43 @@ namespace CateringApi.Repositories.Implementations
 
             int totalQty = Convert.ToInt32(model.NoofQR);
 
+            string safeCompanyName = new string(model.CompanyName
+                .Where(char.IsLetterOrDigit)
+                .ToArray());
+
+            string logoPath = Path.Combine(_env.WebRootPath, "Images", "CSPL-Logo.png");
+
             using var qrGenerator = new QRCodeGenerator();
 
             for (int i = 1; i <= totalQty; i++)
             {
-                string uniqueCode = $"CSPL-{model.RequestId}-CMP-{model.CompanyName}-SR-{i:0000}";
+                string uniqueCode = $"CSPL-{model.RequestId}-CMP-{safeCompanyName}-SR-{i:0000}";
 
                 var qrDataObject = new
                 {
-                    model.RequestId,
-                    model.CompanyId,
-                    model.CompanyName,
-                    UniqueCode = uniqueCode,
-                    ValidFrom = model.QRValidFrom,
-                    ValidTill = model.QRValidTill,
-                    SerialNo = i,
-                    UsedDate = (DateTime?)null,
-                    IsUsed = false
+                    UniqueCode = uniqueCode
                 };
 
                 string qrText = JsonSerializer.Serialize(qrDataObject);
 
-                using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.Q);
+                using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.H);
                 var qrCode = new PngByteQRCode(qrData);
 
                 byte[] qrBytes = qrCode.GetGraphic(20);
 
+                byte[] finalQrBytes = AddLogoToQr(qrBytes, logoPath);
+
                 result.Add(new QrResultDto
                 {
                     Text = qrText,
-                    ImageBytes = qrBytes,
-                    ImageBase64 = Convert.ToBase64String(qrBytes),
+                    ImageBytes = finalQrBytes,
+                    ImageBase64 = Convert.ToBase64String(finalQrBytes),
                     UniqueCode = uniqueCode,
                     SerialNo = i,
                     UsedDate = null,
                     IsUsed = false
                 });
             }
-
-            // After successful generation, update RequestHeader
-           // requestHeader.IsActive = false;
-
-            // optional fields if available in your table
-            // requestHeader.UpdatedBy = model.UpdatedBy;
-            // requestHeader.UpdatedDate = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
 
