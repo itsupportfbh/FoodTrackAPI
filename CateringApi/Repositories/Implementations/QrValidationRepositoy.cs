@@ -82,6 +82,9 @@ namespace CateringApi.Repositories.Implementations
             if (qrImage.IsUsed && qrImage.UsedDate.HasValue)
             {
                 var minutesSinceLastUse = (now - qrImage.UsedDate.Value).TotalMinutes;
+
+             
+
                 if (minutesSinceLastUse < 60)
                 {
                     var waitMinutes = (int)Math.Ceiling(60 - minutesSinceLastUse);
