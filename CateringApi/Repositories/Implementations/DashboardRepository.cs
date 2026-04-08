@@ -89,6 +89,57 @@ namespace CateringApi.Repositories.Implementations
   .ToListAsync();
             var today = DateTime.Today;
             var yesterday = today.AddDays(-1);
+    .Where(rd => rd.IsActive)
+    .Join(_context.RequestHeader,
+          rd => rd.RequestHeaderId,
+          rh => rh.Id,
+          (rd, rh) => new { rd, rh })
+    .Join(_context.CompanyMaster,
+          temp => temp.rh.CompanyId,
+          c => c.Id,
+          (temp, c) => new { temp.rd, c })
+
+    //.Select(g => new CompanyOrderDTO
+    //{
+    //    CompanyId = g.Key.Id,
+    //    CompanyName = g.Key.CompanyName,
+    //    TotalQty = g.Sum(x => x.rd.Qty)
+    //})
+    .GroupBy(x => new { x.c.Id, x.c.CompanyName })
+    .Select(g => new
+    {
+        CompanyId = g.Key.Id,
+        CompanyName = g.Key.CompanyName,
+        TotalQty = g.Sum(x => x.rd.Qty)
+    })
+     
+    .GroupJoin(
+        _context.QrImage
+            .Where(q => q.IsUsed)
+            .Join(_context.QrCodeRequest,
+                  qi => qi.Id,
+                  qr => qr.Id,
+                  (qi, qr) => new { qi, qr })
+            .GroupBy(x => x.qr.CompanyId)
+            .Select(g => new
+            {
+                CompanyId = g.Key,
+                RedeemQty = g.Count()
+            }),
+
+        order => order.CompanyId,
+        qr => qr.CompanyId,
+        (order, qrGroup) => new CompanyOrderDTO
+        {
+            CompanyId = order.CompanyId,
+            CompanyName = order.CompanyName,
+            TotalQty = order.TotalQty,
+            RedeemQty = qrGroup.Select(x => x.RedeemQty).FirstOrDefault()
+        }
+    )
+    .OrderByDescending(x => x.TotalQty)
+    .Take(4)
+    .ToListAsync();
 
             var todayCount = await _context.QrImage
                 .CountAsync(x => x.IsUsed && x.UsedDate.Value.Date == today);
