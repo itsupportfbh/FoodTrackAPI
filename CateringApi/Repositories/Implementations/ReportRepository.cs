@@ -160,28 +160,49 @@ SELECT
     s.SessionName,
     cu.CuisineName,
     l.LocationName,
-    SUM(rd.Qty) AS Count
+    SUM(COALESCE(rod.OverrideQty, rd.Qty)) AS Count
 FROM DateSeries ds
 INNER JOIN dbo.RequestHeader rh
     ON rh.Id = ds.RequestHeaderId
 INNER JOIN dbo.RequestDetail rd
     ON rd.RequestHeaderId = rh.Id
    AND rd.IsActive = 1
+
+OUTER APPLY
+(
+    SELECT TOP 1
+        rod.OverrideQty,
+        rod.SessionId,
+        rod.CuisineId,
+        rod.LocationId
+    FROM dbo.RequestOverride ro
+    INNER JOIN dbo.RequestOverrideDetail rod
+        ON rod.RequestOverrideId = ro.Id
+       AND rod.RequestDetailId = rd.Id
+       AND rod.IsActive = 1
+       AND ISNULL(rod.IsCancelled, 0) = 0
+    WHERE ro.RequestHeaderId = rh.Id
+      AND ro.IsActive = 1
+      AND ds.ReportDate >= CAST(ro.FromDate AS date)
+      AND ds.ReportDate <= CAST(ro.ToDate AS date)
+    ORDER BY ro.CreatedDate DESC, ro.Id DESC, rod.Id DESC
+) rod
+
 INNER JOIN dbo.CompanyMaster cm
     ON cm.Id = rh.CompanyId
 INNER JOIN dbo.Session s
-    ON s.Id = rd.SessionId
+    ON s.Id = COALESCE(rod.SessionId, rd.SessionId)
 INNER JOIN dbo.CuisineMaster cu
-    ON cu.Id = rd.CuisineId
+    ON cu.Id = COALESCE(rod.CuisineId, rd.CuisineId)
 INNER JOIN dbo.Location l
-    ON l.Id = rd.LocationId
+    ON l.Id = COALESCE(rod.LocationId, rd.LocationId)
 WHERE rh.IsActive = 1
   AND (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
   AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
   AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-  AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
-  AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
-  AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
+  AND (@SessionId IS NULL OR COALESCE(rod.SessionId, rd.SessionId) = @SessionId)
+  AND (@CuisineId IS NULL OR COALESCE(rod.CuisineId, rd.CuisineId) = @CuisineId)
+  AND (@LocationId IS NULL OR COALESCE(rod.LocationId, rd.LocationId) = @LocationId)
 GROUP BY
     cm.CompanyName,
     ds.ReportDate,
@@ -220,25 +241,55 @@ OPTION (MAXRECURSION 366);";
     WHERE ds.ReportDate < ds.EndDate
 )
 SELECT
+    s.SessionName,
     cu.CuisineName,
-    SUM(rd.Qty) AS TotalQty
+    SUM(COALESCE(rod.OverrideQty, rd.Qty)) AS TotalQty
 FROM DateSeries ds
 INNER JOIN dbo.RequestHeader rh
     ON rh.Id = ds.RequestHeaderId
 INNER JOIN dbo.RequestDetail rd
     ON rd.RequestHeaderId = rh.Id
    AND rd.IsActive = 1
+
+OUTER APPLY
+(
+    SELECT TOP 1
+        rod.OverrideQty,
+        rod.SessionId,
+        rod.CuisineId,
+        rod.LocationId
+    FROM dbo.RequestOverride ro
+    INNER JOIN dbo.RequestOverrideDetail rod
+        ON rod.RequestOverrideId = ro.Id
+       AND rod.RequestDetailId = rd.Id
+       AND rod.IsActive = 1
+       AND ISNULL(rod.IsCancelled, 0) = 0
+    WHERE ro.RequestHeaderId = rh.Id
+      AND ro.IsActive = 1
+      AND ds.ReportDate >= CAST(ro.FromDate AS date)
+      AND ds.ReportDate <= CAST(ro.ToDate AS date)
+    ORDER BY ro.CreatedDate DESC, ro.Id DESC, rod.Id DESC
+) rod
+
+INNER JOIN dbo.Session s
+    ON s.Id = COALESCE(rod.SessionId, rd.SessionId)
 INNER JOIN dbo.CuisineMaster cu
-    ON cu.Id = rd.CuisineId
+    ON cu.Id = COALESCE(rod.CuisineId, rd.CuisineId)
 WHERE rh.IsActive = 1
   AND (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
   AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
   AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-  AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
-  AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
-  AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
-GROUP BY cu.CuisineName
-ORDER BY cu.CuisineName
+  AND (@SessionId IS NULL OR COALESCE(rod.SessionId, rd.SessionId) = @SessionId)
+  AND (@CuisineId IS NULL OR COALESCE(rod.CuisineId, rd.CuisineId) = @CuisineId)
+  AND (@LocationId IS NULL OR COALESCE(rod.LocationId, rd.LocationId) = @LocationId)
+GROUP BY
+    s.SessionName,
+    s.Id,
+    cu.CuisineName,
+    cu.Id
+ORDER BY
+    s.Id,
+    cu.Id
 OPTION (MAXRECURSION 366);";
 
             var rows = await con.QueryAsync<ReportByDateRowDto>(mainSql, new
