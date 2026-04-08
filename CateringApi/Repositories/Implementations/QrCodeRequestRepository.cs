@@ -285,7 +285,7 @@ namespace CateringApi.Repositories.Implementations
             return result;
         }
 
-        public async Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int requestId)
+        public async Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int qrcoderequestid)
         {
             var requestData = await (
                 from q in _context.QrCodeRequest
@@ -294,7 +294,7 @@ namespace CateringApi.Repositories.Implementations
                 join c in _context.CompanyMaster
                     on q.CompanyId equals c.Id into companyJoin
                 from c in companyJoin.DefaultIfEmpty()
-                where q.RequestId == requestId
+                where q.Id == qrcoderequestid
                 select new QrRequestWithImagesDto
                 {
                     Id = q.Id,
@@ -338,9 +338,9 @@ namespace CateringApi.Repositories.Implementations
             return requestData;
         }
 
-        public async Task<(byte[] ZipBytes, string FileName)?> DownloadQrZip(int requestId)
+        public async Task<(byte[] ZipBytes, string FileName)?> DownloadQrZip(int qrcoderequestid)
     {
-        var data = await GetQrImageDetailsByRequestId(requestId);
+        var data = await GetQrImageDetailsByRequestId(qrcoderequestid);
 
         if (data == null)
             return null;
