@@ -36,9 +36,10 @@ where isActive = 1
 
         public async Task<int> CreateSession(SessionDTO SessionDTO)
         {
-            const string query = @"INSERT INTO Session (SessionName,Description,CreatedBy, CreatedDate, UpdatedBy, UpdatedDate,IsActive) 
+            const string query = @"INSERT INTO Session (SessionName,Description, FromTime,
+            ToTime,CreatedBy, CreatedDate, UpdatedBy, UpdatedDate,IsActive) 
                                OUTPUT INSERTED.Id 
-                               VALUES (@SessionName,@Description,@CreatedBy, @CreatedDate, @UpdatedBy, @UpdatedDate,@IsActive)";
+                               VALUES (@SessionName,@Description,@FromTime,@ToTime,@CreatedBy, @CreatedDate, @UpdatedBy, @UpdatedDate,@IsActive)";
 
             using var con = _context.CreateConnection();
             return await con.ExecuteScalarAsync<int>(query, SessionDTO);
@@ -52,7 +53,9 @@ where isActive = 1
             const string query = @"
         UPDATE Session SET 
             SessionName = @SessionName,
-            Description = @Description
+            Description = @Description,
+            FromTime=@FromTime,
+            ToTime=@ToTime
         WHERE Id = @Id";
 
             using var con = _context.CreateConnection();
