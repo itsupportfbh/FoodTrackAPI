@@ -39,5 +39,24 @@ namespace CateringApi.Controllers
                 foodTotals = totals
             });
         }
+
+        [HttpPost("ExportReportExcel")]
+        public async Task<IActionResult> ExportReportExcel([FromBody] ReportFilterDto model)
+        {
+            var fileBytes = await _repository.ExportReportExcelAsync(model);
+
+            return File(
+                fileBytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"CSPL_ReportByDates_{DateTime.Now:dd-MM-yyyy}.xlsx"
+            );
+        }
+
+        [HttpPost("SendReportEmail")]
+        public async Task<IActionResult> SendReportEmail([FromBody] ReportEmailRequestDto model)
+        {
+            await _repository.SendReportEmailAsync(model);
+            return Ok(new { message = "Report mail sent successfully" });
+        }
     }
 }

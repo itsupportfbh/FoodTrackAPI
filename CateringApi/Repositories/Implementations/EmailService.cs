@@ -46,5 +46,49 @@ namespace CateringApi.Services
 
             await client.SendMailAsync(message);
         }
+        public async Task SendEmailWithAttachmentAsync(string toEmail, string subject, string body, byte[] fileBytes, string fileName)
+        {
+            var smtpHost = _configuration["SmtpSettings:SmtpHost"];
+            var smtpPort = Convert.ToInt32(_configuration["SmtpSettings:SmtpPort"]);
+            var smtpUser = _configuration["SmtpSettings:SmtpUser"];
+            var smtpPass = _configuration["SmtpSettings:SmtpPass"];
+            var fromEmail = _configuration["SmtpSettings:From"];
+
+            if (string.IsNullOrWhiteSpace(toEmail))
+                throw new Exception("Recipient email address is missing.");
+
+            if (string.IsNullOrWhiteSpace(fromEmail))
+                throw new Exception("SmtpSettings:From is missing in appsettings.json.");
+
+            if (string.IsNullOrWhiteSpace(smtpHost))
+                throw new Exception("SmtpSettings:SmtpHost is missing in appsettings.json.");
+
+            using var message = new MailMessage();
+            message.From = new MailAddress(fromEmail);
+            message.To.Add(toEmail);
+            message.Subject = subject;
+            message.Body = body;
+            message.IsBodyHtml = true;
+
+            if (fileBytes != null && fileBytes.Length > 0)
+            {
+                var stream = new MemoryStream(fileBytes);
+                var attachment = new Attachment(
+                    stream,
+                    fileName,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                );
+
+                message.Attachments.Add(attachment);
+            }
+
+            using var client = new SmtpClient(smtpHost, smtpPort)
+            {
+                Credentials = new NetworkCredential(smtpUser, smtpPass),
+                EnableSsl = true
+            };
+
+            await client.SendMailAsync(message);
+        }
     }
 }
