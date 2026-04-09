@@ -287,14 +287,12 @@ namespace CateringApi.Repositories.Implementations
 
             for (int i = 1; i <= totalQty; i++)
             {
-                string uniqueCode = $"CSPL-{model.RequestId}-CMP-{safeCompanyName}-SR-{i:0000}";
+                // sample format:
+                // Unicode-CSPL_ABC_Rq_001
+                string uniqueCode = $"CSPL_{safeCompanyName}_Rq_{i:000}";
 
-                var qrDataObject = new
-                {
-                    UniqueCode = uniqueCode
-                };
-
-                string qrText = JsonSerializer.Serialize(qrDataObject);
+                // plain text only
+                string qrText = uniqueCode;
 
                 using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.H);
                 var qrCode = new PngByteQRCode(qrData);
