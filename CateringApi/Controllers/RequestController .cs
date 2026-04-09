@@ -52,7 +52,7 @@ namespace CateringApi.Controllers
                 return BadRequest("To Date is required.");
 
             if (model.FromDate.Date > model.ToDate.Date)
-                return BadRequest("From Date should not be greater than To Date.");
+                return BadRequest("From Date should not be greater than ToDate.");
 
             if (model.Lines == null || !model.Lines.Any())
                 return BadRequest("At least one line is required.");

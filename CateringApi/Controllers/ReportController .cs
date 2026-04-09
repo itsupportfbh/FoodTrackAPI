@@ -29,7 +29,7 @@ namespace CateringApi.Controllers
                 return BadRequest("UserId is required.");
 
             if (model.FromDate.HasValue && model.ToDate.HasValue && model.FromDate > model.ToDate)
-                return BadRequest("From Date should not be greater than To Date.");
+                return BadRequest("From Date should not be greater than ToDate.");
 
             var (rows, totals) = await _repository.GetReportByDatesAsync(model);
 
