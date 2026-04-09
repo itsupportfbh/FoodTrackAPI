@@ -38,4 +38,12 @@
         public string CuisineName { get; set; } = string.Empty;
         public decimal TotalQty { get; set; }
     }
+
+
+    public class ReportEmailRequestDto : ReportFilterDto
+    {
+        public string ToEmail { get; set; } = string.Empty;
+        public string Subject { get; set; } = "Report By Dates";
+        public string Body { get; set; } = "Please find the attached report.";
+    }
 }
