@@ -9,5 +9,6 @@ namespace CateringApi.Repositories.Interfaces
         Task<RequestDto?> GetRequestByIdAsync(int id);
         Task<int> SaveRequestAsync(RequestHeaderDto model);
         Task<bool> DeleteRequestAsync(int id, int? userId);
+        Task<int> GetOrderDays();
     }
 }

@@ -9,6 +9,7 @@
         public string LateLunchCutOffTime { get; set; }
         public string DinnerCutOffTime { get; set; }
         public string LateDinnerCutOffTime { get; set; }
+        public int? orderDays { get; set; }
         public string? CronEmail { get; set; }
 
         public bool IsActive { get; set; } 

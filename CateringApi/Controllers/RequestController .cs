@@ -89,5 +89,12 @@ namespace CateringApi.Controllers
 
             return Ok(new { message = "Request deleted successfully" });
         }
+
+        [HttpGet("GetOrderDays")]
+        public async Task<int> GetOrderDays()
+        {
+            var data = await _repository.GetOrderDays();
+            return data;
+        }
     }
 }

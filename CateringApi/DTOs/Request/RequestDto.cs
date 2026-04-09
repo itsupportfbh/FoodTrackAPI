@@ -52,6 +52,8 @@
         public DateTime? UpdatedDate { get; set; }
 
         public List<RequestDetailDto> Lines { get; set; } = new();
+
+        public int OrderDays { get; set; }
     }
 
     public class RequestDetailDto
@@ -84,5 +86,6 @@
         public IEnumerable<DropdownDto> Sessions { get; set; } = new List<DropdownDto>();
         public IEnumerable<DropdownDto> Cuisines { get; set; } = new List<DropdownDto>();
         public IEnumerable<DropdownDto> Locations { get; set; } = new List<DropdownDto>();
+        public int OrderDays { get; set; }
     }
 }
