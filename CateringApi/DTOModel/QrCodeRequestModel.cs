@@ -20,9 +20,9 @@
         public DateTime? UpdatedDate { get; set; }
         public int CreatedBy { get; set; }
         public int UpdatedBy { get; set; }
-       
+        public int OverrideId { get; set; }
 
-        //
+        
 
         public string? QRImageBase64 { get; set; }
 
@@ -56,6 +56,7 @@
     public class RequestDropdownDto
     {
         public int RequestId { get; set; }
+        public int? OverrideId { get; set; }
         public int CompanyId { get; set; }
         public string CompanyName { get; set; }
         public string RequestNo {  get; set; }
@@ -63,5 +64,9 @@
         public DateTime? FromDate { get; set; }
         public DateTime? TillDate { get; set; }
         public string CompanyEmail { get; set; } = string.Empty;
+        public int? TotalQty { get; set; }
+        public int DifferentQty { get; set; }
+        public string SourceType { get; set; }   // "REQUEST" or "OVERRIDE"
+        public string DisplayText { get; set; }  // dropdown display
     }
 }
