@@ -44,7 +44,7 @@ namespace CateringApi.Repositories.Implementations
         };
     }
 
-        public async Task<int> SaveAsync(SaveRequestOverrideDto dto)
+        public async Task<SaveRequestOverrideResultDto> SaveAsync(SaveRequestOverrideDto dto)
         {
             Console.WriteLine("REPO SAVE HIT: " + DateTime.Now.ToString("HH:mm:ss.fff"));
 
@@ -62,14 +62,16 @@ namespace CateringApi.Repositories.Implementations
 
             param.Add("@LinesJson", JsonSerializer.Serialize(dto.Lines, jsonOptions));
 
-            var result = await Connection.QueryFirstAsync<dynamic>(
+            var result = await Connection.QueryFirstAsync<SaveRequestOverrideResultDto>(
                 "dbo.sp_RequestOverride_Save",
                 param,
                 commandType: CommandType.StoredProcedure);
 
             Console.WriteLine("REPO SAVE SUCCESS ID: " + result.Id);
+            Console.WriteLine("TOTAL QTY: " + result.TotalQty);
+            Console.WriteLine("DIFF QTY: " + result.DifferentQty);
 
-            return (int)result.Id;
+            return result;
         }
         public async Task<List<RequestOverrideListDto>> GetOverrideList(int companyId)
         {
