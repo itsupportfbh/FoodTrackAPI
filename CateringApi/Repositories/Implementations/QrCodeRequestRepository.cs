@@ -10,6 +10,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using QRCoder;
 using System.ComponentModel;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Mail;
@@ -24,11 +27,12 @@ namespace CateringApi.Repositories.Implementations
         private readonly FoodDBContext _context;
         private readonly SmtpSettings _smtpSettings;
 
-
-        public QrCodeRequestRepository(FoodDBContext context, IOptions<SmtpSettings> smtpOptions)
+        private readonly IWebHostEnvironment _env;
+        public QrCodeRequestRepository(FoodDBContext context, IOptions<SmtpSettings> smtpOptions, IWebHostEnvironment env)
         {
             _context = context;
             _smtpSettings = smtpOptions.Value;
+            _env = env;
         }
 
         
@@ -209,7 +213,46 @@ namespace CateringApi.Repositories.Implementations
 
             return data;
         }
-        
+
+        private byte[] AddLogoToQr(byte[] qrBytes, string logoPath)
+        {
+            if (!System.IO.File.Exists(logoPath))
+                return qrBytes;
+
+            using var qrMs = new MemoryStream(qrBytes);
+            using var qrBitmap = new Bitmap(qrMs);
+            using var logoBitmap = new Bitmap(logoPath);
+            using var finalBitmap = new Bitmap(qrBitmap.Width, qrBitmap.Height);
+
+            using (var graphics = Graphics.FromImage(finalBitmap))
+            {
+                graphics.Clear(Color.White);
+                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                graphics.SmoothingMode = SmoothingMode.HighQuality;
+                graphics.CompositingQuality = CompositingQuality.HighQuality;
+
+                graphics.DrawImage(qrBitmap, 0, 0, qrBitmap.Width, qrBitmap.Height);
+
+                int logoSize = (int)(qrBitmap.Width * 0.18);
+                int logoX = (qrBitmap.Width - logoSize) / 2;
+                int logoY = (qrBitmap.Height - logoSize) / 2;
+                int padding = 8;
+
+                graphics.FillEllipse(
+                    Brushes.White,
+                    logoX - padding,
+                    logoY - padding,
+                    logoSize + (padding * 2),
+                    logoSize + (padding * 2)
+                );
+
+                graphics.DrawImage(logoBitmap, logoX, logoY, logoSize, logoSize);
+            }
+
+            using var outputMs = new MemoryStream();
+            finalBitmap.Save(outputMs, ImageFormat.Png);
+            return outputMs.ToArray();
+        }
 
         public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
         {
@@ -224,7 +267,6 @@ namespace CateringApi.Repositories.Implementations
                 return result;
             }
 
-            // Check RequestHeader is active
             var requestHeader = await _context.RequestHeader
                 .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive == true);
 
@@ -235,37 +277,47 @@ namespace CateringApi.Repositories.Implementations
 
             int totalQty = Convert.ToInt32(model.NoofQR);
 
+            string safeCompanyName = new string(model.CompanyName
+                .Where(char.IsLetterOrDigit)
+                .ToArray())
+                .ToUpper();
+
+            DateTime validFrom = model.QRValidFrom;
+            DateTime validTill = model.QRValidTill;
+
+            string fromMonth = validFrom.ToString("MMM").ToUpper(); // APR
+            string tillMonth = validTill.ToString("MMM").ToUpper(); // MAY
+
+            string monthPart = fromMonth == tillMonth
+                ? fromMonth
+                : $"{fromMonth}-{tillMonth}";
+
+            string requestPart = $"RQ{model.RequestId}";
+
+            string logoPath = Path.Combine(_env.WebRootPath, "Images", "CSPL Logo.png");
+
             using var qrGenerator = new QRCodeGenerator();
 
             for (int i = 1; i <= totalQty; i++)
             {
-                string uniqueCode = $"CSPL-{model.RequestId}-CMP-{model.CompanyName}-SR-{i:0000}";
+                // Example:
+                // CSPL_COMPANY_APR_RQ12_001
+                // CSPL_COMPANY_APR-MAY_RQ12_001
+                string uniqueCode = $"CSPL{safeCompanyName}{monthPart}{requestPart}_{i:000}";
 
-                var qrDataObject = new
-                {
-                    model.RequestId,
-                    model.CompanyId,
-                    model.CompanyName,
-                    UniqueCode = uniqueCode,
-                    ValidFrom = model.QRValidFrom,
-                    ValidTill = model.QRValidTill,
-                    SerialNo = i,
-                    UsedDate = (DateTime?)null,
-                    IsUsed = false
-                };
+                string qrText = uniqueCode;
 
-                string qrText = JsonSerializer.Serialize(qrDataObject);
-
-                using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.Q);
+                using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.H);
                 var qrCode = new PngByteQRCode(qrData);
 
                 byte[] qrBytes = qrCode.GetGraphic(20);
+                byte[] finalQrBytes = AddLogoToQr(qrBytes, logoPath);
 
                 result.Add(new QrResultDto
                 {
                     Text = qrText,
-                    ImageBytes = qrBytes,
-                    ImageBase64 = Convert.ToBase64String(qrBytes),
+                    ImageBytes = finalQrBytes,
+                    ImageBase64 = Convert.ToBase64String(finalQrBytes),
                     UniqueCode = uniqueCode,
                     SerialNo = i,
                     UsedDate = null,
@@ -273,19 +325,12 @@ namespace CateringApi.Repositories.Implementations
                 });
             }
 
-            // After successful generation, update RequestHeader
-           // requestHeader.IsActive = false;
-
-            // optional fields if available in your table
-            // requestHeader.UpdatedBy = model.UpdatedBy;
-            // requestHeader.UpdatedDate = DateTime.UtcNow;
-
             await _context.SaveChangesAsync();
 
             return result;
         }
 
-        public async Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int requestId)
+        public async Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int qrcoderequestid)
         {
             var requestData = await (
                 from q in _context.QrCodeRequest
@@ -294,7 +339,7 @@ namespace CateringApi.Repositories.Implementations
                 join c in _context.CompanyMaster
                     on q.CompanyId equals c.Id into companyJoin
                 from c in companyJoin.DefaultIfEmpty()
-                where q.RequestId == requestId
+                where q.Id == qrcoderequestid
                 select new QrRequestWithImagesDto
                 {
                     Id = q.Id,
@@ -338,9 +383,9 @@ namespace CateringApi.Repositories.Implementations
             return requestData;
         }
 
-        public async Task<(byte[] ZipBytes, string FileName)?> DownloadQrZip(int requestId)
+        public async Task<(byte[] ZipBytes, string FileName)?> DownloadQrZip(int qrcoderequestid)
     {
-        var data = await GetQrImageDetailsByRequestId(requestId);
+        var data = await GetQrImageDetailsByRequestId(qrcoderequestid);
 
         if (data == null)
             return null;
@@ -434,25 +479,48 @@ namespace CateringApi.Repositories.Implementations
 <html>
 <head>
   <meta charset='UTF-8'>
-  <title > Your QR Codes </title>
+  <title>Your QR Codes</title>
 </head>
 <body style='margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, Helvetica, sans-serif; color:#333333;'>
   <div style='width:100%; background-color:#f4f6f8; padding:30px 0;'>
     <table role='presentation' cellspacing='0' cellpadding='0' border='0' width='100%' style='max-width:900px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.08);'>
       
       <tr>
-        <td style='background: linear-gradient(135deg, #b7410e, #e25822); padding:28px 32px; text-align:center;'>
-          <h1 style='margin:0; font-size:28px; color:#ffffff; font-weight:700; letter-spacing:0.3px;'>
-            CSPL
-          </h1>
-          <p style='margin:8px 0 0; font-size:14px; color:#e8f0ff;'>
-            Please find all generated QR codes attached below.
-          </p>
+        <td style='background: linear-gradient(135deg, #b7410e, #e25822); padding:20px 32px;'>
+          <table role='presentation' cellspacing='0' cellpadding='0' border='0' width='100%' style='width:100%; border-collapse:collapse;'>
+           <tr>
+  <td style='width:110px; vertical-align:middle; text-align:left;'>
+    <div style='display:inline-block; background-color:#ffffff; padding:10px; border-radius:12px;'>
+      <img src='cid:csplLogo'
+           alt='CSPL Logo'
+           style='display:block; width:80px; height:80px; object-fit:contain;' />
+    </div>
+  </td>
+
+  <td style='vertical-align:middle; text-align:center;'>
+  <h1 style=""
+  margin:0;
+  font-size:40px;
+  color:#ffffff;
+  font-weight:700;
+  letter-spacing:1.5px;
+  font-family: 'Cinzel', serif;
+"">
+  CSPL
+</h1>
+    
+  </td>
+
+  <td style='width:110px;'>
+    &nbsp;
+  </td>
+</tr>
+          </table>
         </td>
       </tr>
 
-      <tr style=''>
-        <td style='padding:28px 32px 12px;background: linear-gradient(135deg, #f4e1c1, #e6c79c);' >
+      <tr>
+        <td style='padding:28px 32px 12px;background: linear-gradient(135deg, #f4e1c1, #e6c79c);'>
           <p style='margin:0 0 16px; font-size:15px; line-height:1.6; color:#4b5563;'>
             Hello,
           </p>
@@ -468,8 +536,6 @@ namespace CateringApi.Repositories.Implementations
             <tr style='background-color:#f9fafb;'>
               <th style='padding:14px 12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827; text-align:center;'>S.No</th>
               <th style='padding:14px 12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827; text-align:left;'>Unique Code</th>
-              <th style='padding:14px 12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827; text-align:center;'>Status</th>
-              <th style='padding:14px 12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827; text-align:center;'>Used Date</th>
             </tr>
 ");
 
@@ -477,22 +543,12 @@ namespace CateringApi.Repositories.Implementations
 
                 foreach (var qr in model.QrItems)
                 {
-                    string statusHtml = qr.IsUsed
-                        ? "<span style='display:inline-block; padding:6px 12px; background-color:#dcfce7; color:#166534; border-radius:999px; font-size:12px; font-weight:700;'>Used</span>"
-                        : "<span style='display:inline-block; padding:6px 12px; background-color:#fee2e2; color:#991b1b; border-radius:999px; font-size:12px; font-weight:700;'>Not Used</span>";
-
-                    string usedDateText = qr.UsedDate.HasValue
-                        ? qr.UsedDate.Value.ToString("dd-MMM-yyyy hh:mm tt")
-                        : "-";
-
                     string rowBg = count % 2 == 0 ? "#fcfcfd" : "#ffffff";
 
                     bodyBuilder.Append($@"
             <tr style='background-color:{rowBg};'>
               <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; color:#374151; text-align:center;'>{count}</td>
               <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; color:#111827; font-weight:600; text-align:left;'>{qr.UniqueCode}</td>
-              <td style='padding:12px; border:1px solid #e5e7eb; text-align:center;'>{statusHtml}</td>
-              <td style='padding:12px; border:1px solid #e5e7eb; font-size:13px; color:#4b5563; text-align:center;'>{usedDateText}</td>
             </tr>");
 
                     if (!string.IsNullOrWhiteSpace(qr.QrImageBase64))
@@ -541,7 +597,26 @@ namespace CateringApi.Repositories.Implementations
 </html>
 ");
 
-                message.Body = bodyBuilder.ToString();
+                string logoPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Images", "CSPL Logo.png");
+                string logoContentId = "csplLogo";
+
+                if (File.Exists(logoPath))
+                {
+                    var htmlView = AlternateView.CreateAlternateViewFromString(bodyBuilder.ToString(), null, "text/html");
+
+                    var linkedLogo = new LinkedResource(logoPath, "image/png")
+                    {
+                        ContentId = logoContentId,
+                        TransferEncoding = System.Net.Mime.TransferEncoding.Base64
+                    };
+
+                    htmlView.LinkedResources.Add(linkedLogo);
+                    message.AlternateViews.Add(htmlView);
+                }
+                else
+                {
+                    message.Body = bodyBuilder.ToString();
+                }
 
                 using var smtp = new SmtpClient(_smtpSettings.SmtpHost, _smtpSettings.SmtpPort)
                 {
@@ -559,7 +634,6 @@ namespace CateringApi.Repositories.Implementations
                 throw new Exception("Email sending failed: " + ex.Message);
             }
         }
-              
         public async Task<QrCodeRequestModel> AddUpdateQrWithImagesAsync(QrCodeRequestModel model)
         {
             if (model == null)

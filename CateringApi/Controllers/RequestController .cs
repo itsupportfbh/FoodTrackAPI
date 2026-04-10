@@ -52,7 +52,7 @@ namespace CateringApi.Controllers
                 return BadRequest("To Date is required.");
 
             if (model.FromDate.Date > model.ToDate.Date)
-                return BadRequest("From Date should not be greater than To Date.");
+                return BadRequest("From Date should not be greater than ToDate.");
 
             if (model.Lines == null || !model.Lines.Any())
                 return BadRequest("At least one line is required.");
@@ -88,6 +88,13 @@ namespace CateringApi.Controllers
                 return NotFound("Request not found");
 
             return Ok(new { message = "Request deleted successfully" });
+        }
+
+        [HttpGet("GetOrderDays")]
+        public async Task<int> GetOrderDays()
+        {
+            var data = await _repository.GetOrderDays();
+            return data;
         }
     }
 }

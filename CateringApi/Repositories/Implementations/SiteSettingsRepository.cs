@@ -75,6 +75,7 @@ namespace CateringApi.Repositories.Implementations
                     LateLunchCutOffTime = model.LateLunchCutOffTime,
                     DinnerCutOffTime = model.DinnerCutOffTime,
                     LateDinnerCutOffTime = model.LateDinnerCutOffTime,
+                    orderDays = model.orderDays,
                     CronEmail = model.CronEmail,
 
                     IsActive = true,
@@ -92,6 +93,7 @@ namespace CateringApi.Repositories.Implementations
                 existing.LateLunchCutOffTime = model.LateLunchCutOffTime;
                 existing.DinnerCutOffTime = model.DinnerCutOffTime;
                 existing.LateDinnerCutOffTime = model.LateDinnerCutOffTime;
+                existing.orderDays = model.orderDays;
                 existing.CronEmail = model.CronEmail;
 
                 existing.UpdatedDate = DateTime.Now;

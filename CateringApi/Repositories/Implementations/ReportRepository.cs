@@ -1,17 +1,22 @@
-﻿using CateringApi.Data;
+﻿using System.ComponentModel;
+using CateringApi.Data;
 using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
+using CateringApi.Services;
 using Dapper;
+using OfficeOpenXml;
 
 namespace CateringApi.Repositories.Implementations
 {
     public class ReportRepository : IReportRepository
     {
         private readonly DapperContext _context;
+        private readonly IEmailService _emailService;
 
-        public ReportRepository(DapperContext context)
+        public ReportRepository(DapperContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         public async Task<ReportPageMasterDto> GetReportPageMastersAsync(int userId)
@@ -263,5 +268,226 @@ OPTION (MAXRECURSION 366);";
 
             return (rows, totals);
         }
+
+        public async Task<byte[]> ExportReportExcelAsync(ReportFilterDto model)
+        {
+            ExcelPackage.License.SetNonCommercialOrganization("CateringApi");
+
+            var result = await GetReportByDatesAsync(model);
+            var rows = result.Rows.ToList();
+
+            using var con = _context.CreateConnection();
+
+            string companyText = "All companies";
+            string sessionText = "All sessions";
+            string cuisineText = "All cuisines";
+            string locationText = "All locations";
+
+            if (model.CompanyId.HasValue && model.CompanyId.Value > 0)
+            {
+                companyText = await con.QueryFirstOrDefaultAsync<string>(
+                    "SELECT CompanyName FROM dbo.CompanyMaster WHERE Id = @Id",
+                    new { Id = model.CompanyId.Value }
+                ) ?? "All companies";
+            }
+
+            if (model.SessionId.HasValue && model.SessionId.Value > 0)
+            {
+                sessionText = await con.QueryFirstOrDefaultAsync<string>(
+                    "SELECT SessionName FROM dbo.Session WHERE Id = @Id",
+                    new { Id = model.SessionId.Value }
+                ) ?? "All sessions";
+            }
+
+            if (model.CuisineId.HasValue && model.CuisineId.Value > 0)
+            {
+                cuisineText = await con.QueryFirstOrDefaultAsync<string>(
+                    "SELECT CuisineName FROM dbo.CuisineMaster WHERE Id = @Id",
+                    new { Id = model.CuisineId.Value }
+                ) ?? "All cuisines";
+            }
+
+            if (model.LocationId.HasValue && model.LocationId.Value > 0)
+            {
+                locationText = await con.QueryFirstOrDefaultAsync<string>(
+                    "SELECT LocationName FROM dbo.Location WHERE Id = @Id",
+                    new { Id = model.LocationId.Value }
+                ) ?? "All locations";
+            }
+
+            using var package = new ExcelPackage();
+            var ws = package.Workbook.Worksheets.Add("Report By Dates");
+
+            int row = 1;
+
+            // Header
+            ws.Cells[row, 1].Value = "Report By Dates";
+            ws.Cells[row, 1, row, 6].Merge = true;
+            ws.Cells[row, 1].Style.Font.Size = 18;
+            ws.Cells[row, 1].Style.Font.Bold = true;
+            row++;
+
+            ws.Cells[row, 1].Value = "Company-wise food request report";
+            ws.Cells[row, 1, row, 6].Merge = true;
+            ws.Cells[row, 1].Style.Font.Size = 11;
+            ws.Cells[row, 1].Style.Font.Bold = true;
+            row += 2;
+
+            // Filters
+            ws.Cells[row, 1].Value = "Company:";
+            ws.Cells[row, 1].Style.Font.Bold = true;
+            ws.Cells[row, 2].Value = companyText;
+
+            ws.Cells[row, 3].Value = "From Date:";
+            ws.Cells[row, 3].Style.Font.Bold = true;
+            ws.Cells[row, 4].Value = model.FromDate?.ToString("dd-MM-yyyy") ?? "";
+
+            ws.Cells[row, 5].Value = "To Date:";
+            ws.Cells[row, 5].Style.Font.Bold = true;
+            ws.Cells[row, 6].Value = model.ToDate?.ToString("dd-MM-yyyy") ?? "";
+            row++;
+
+            ws.Cells[row, 1].Value = "Session:";
+            ws.Cells[row, 1].Style.Font.Bold = true;
+            ws.Cells[row, 2].Value = sessionText;
+
+            ws.Cells[row, 3].Value = "Cuisine:";
+            ws.Cells[row, 3].Style.Font.Bold = true;
+            ws.Cells[row, 4].Value = cuisineText;
+
+            ws.Cells[row, 5].Value = "Location:";
+            ws.Cells[row, 5].Style.Font.Bold = true;
+            ws.Cells[row, 6].Value = locationText;
+            row += 2;
+
+            // Session & Cuisine Totals
+            ws.Cells[row, 1].Value = "Session & Cuisine Totals";
+            ws.Cells[row, 1].Style.Font.Bold = true;
+            ws.Cells[row, 1].Style.Font.Size = 13;
+            row++;
+
+            var grouped = rows
+                .GroupBy(x => x.SessionName)
+                .Select(g => new
+                {
+                    Session = g.Key,
+                    Total = g.Sum(x => Convert.ToDecimal(x.Count)),
+                    Cuisines = g.GroupBy(x => x.CuisineName)
+                                .Select(c => new
+                                {
+                                    Cuisine = c.Key,
+                                    Total = c.Sum(x => Convert.ToDecimal(x.Count))
+                                }).ToList()
+                })
+                .ToList();
+
+            foreach (var session in grouped)
+            {
+                ws.Cells[row, 1].Value = session.Session;
+                ws.Cells[row, 1].Style.Font.Bold = true;
+
+                ws.Cells[row, 2].Value = "Total Count";
+                ws.Cells[row, 2].Style.Font.Bold = true;
+
+                ws.Cells[row, 3].Value = session.Total;
+                ws.Cells[row, 3].Style.Font.Bold = true;
+                row++;
+
+                foreach (var c in session.Cuisines)
+                {
+                    ws.Cells[row, 2].Value = c.Cuisine;
+                    ws.Cells[row, 3].Value = c.Total;
+                    row++;
+                }
+
+                row++;
+            }
+
+            row++;
+
+            // Table Header
+            ws.Cells[row, 1].Value = "Company";
+            ws.Cells[row, 2].Value = "Date";
+            ws.Cells[row, 3].Value = "Session";
+            ws.Cells[row, 4].Value = "Cuisine";
+            ws.Cells[row, 5].Value = "Location";
+            ws.Cells[row, 6].Value = "Count";
+
+            using (var range = ws.Cells[row, 1, row, 6])
+            {
+                range.Style.Font.Bold = true;
+                range.Style.Font.Size = 12;
+            }
+
+            row++;
+
+            // Table Data
+            foreach (var item in rows)
+            {
+                ws.Cells[row, 1].Value = item.CompanyName;
+                ws.Cells[row, 2].Value = item.ReportDate;
+                ws.Cells[row, 2].Style.Numberformat.Format = "dd-MM-yyyy";
+                ws.Cells[row, 3].Value = item.SessionName;
+                ws.Cells[row, 4].Value = item.CuisineName;
+                ws.Cells[row, 5].Value = item.LocationName;
+                ws.Cells[row, 6].Value = item.Count;
+                row++;
+            }
+
+            if (ws.Dimension != null)
+            {
+                ws.Cells[ws.Dimension.Address].AutoFitColumns();
+            }
+
+            return await package.GetAsByteArrayAsync();
+        }
+
+        public async Task SendReportEmailAsync(ReportEmailRequestDto model)
+        {
+            if (string.IsNullOrWhiteSpace(model.ToEmail))
+                throw new Exception("Recipient email is required.");
+
+            var excelBytes = await ExportReportExcelAsync(model);
+            string companyText = "AllCompanies";
+
+            if (model.CompanyId.HasValue && model.CompanyId.Value > 0)
+            {
+                using var con = _context.CreateConnection();
+
+                companyText = await con.QueryFirstOrDefaultAsync<string>(
+                    "SELECT CompanyName FROM dbo.CompanyMaster WHERE Id = @Id",
+                    new { Id = model.CompanyId.Value }
+                ) ?? "AllCompanies";
+            }
+
+            // safe file name
+            companyText = new string(companyText
+                .Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                .ToArray());
+
+            if (string.IsNullOrWhiteSpace(companyText))
+            {
+                companyText = "AllCompanies";
+            }
+
+            var fileName = $"CSPL_ReportByDates_{DateTime.Now:dd-MM-yyyy}_{companyText}.xlsx";
+
+            var subject = string.IsNullOrWhiteSpace(model.Subject)
+                ? "Report By Dates"
+                : model.Subject;
+
+            var body = string.IsNullOrWhiteSpace(model.Body)
+                ? "Please find the attached report."
+                : model.Body;
+
+            await _emailService.SendEmailWithAttachmentAsync(
+                model.ToEmail,
+                subject,
+                body,
+                excelBytes,
+                fileName
+            );
+        }
+
     }
 }

@@ -28,9 +28,9 @@ namespace CateringApi.Controllers
             return _qrCodeRequestRepository.GetRequestIdDropdown();
         }
         [HttpGet]
-        public async Task<IActionResult> DownloadQrZip(int requestId)
+        public async Task<IActionResult> DownloadQrZip(int qrcoderequestid)
         {
-            var result = await _qrCodeRequestRepository.DownloadQrZip(requestId);
+            var result = await _qrCodeRequestRepository.DownloadQrZip(qrcoderequestid);
 
             if (result == null)
                 return NotFound("No QR images found for download");

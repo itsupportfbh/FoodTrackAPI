@@ -36,19 +36,19 @@ SELECT
     CreatedDate,
     UpdatedBy,
     UpdatedDate
-FROM dbo.CompanyMaster where isactive = 1
+FROM dbo.CompanyMaster
 ORDER BY CompanyName;";
 
             using var con = _context.CreateConnection();
             return await con.QueryAsync<CompanyMaster>(sql);
         }
 
-        public async Task<CompanySaveDto?> GetByIdAsync(int id)
+        public async Task<CompanyDetailDto?> GetByIdAsync(int id)
         {
             using var con = _context.CreateConnection();
 
             const string companySql = @"
-SELECT 
+SELECT
     Id,
     CompanyCode,
     CompanyName,
@@ -64,48 +64,37 @@ SELECT
 FROM dbo.CompanyMaster
 WHERE Id = @Id;";
 
-            const string userSql = @"
-SELECT TOP 1
-    Username,
-    Email
-    
-FROM dbo.UserMaster
-WHERE CompanyId = @Id
-ORDER BY Id;";
-
-            const string locationSql = @"
-SELECT LocationId
-FROM dbo.CompanyLocationMap
-WHERE CompanyId = @Id;";
-
-            const string sessionSql = @"
-SELECT SessionId
-FROM dbo.CompanySessionMap
-WHERE CompanyId = @Id;";
-
-            const string cuisineSql = @"
-SELECT CuisineId
-FROM dbo.CompanyCuisineMap
-WHERE CompanyId = @Id;";
-
-            var company = await con.QueryFirstOrDefaultAsync<CompanySaveDto>(companySql, new { Id = id });
-
+            var company = await con.QueryFirstOrDefaultAsync<CompanyDetailDto>(companySql, new { Id = id });
             if (company == null)
                 return null;
 
-            var user = await con.QueryFirstOrDefaultAsync(userSql, new { Id = id });
+            var locationIds = await con.QueryAsync<int>(
+                @"SELECT LocationId
+          FROM dbo.CompanyLocationMap
+          WHERE CompanyId = @Id;",
+                new { Id = id });
 
-            //if (user != null)
-            //{
-            //    company.ContactPerson = user.Username;
-            //    company.ContactNo = user.ContactNo;
-            //}
+            var cuisineIds = await con.QueryAsync<int>(
+                @"SELECT CuisineId
+          FROM dbo.CompanyCuisineMap
+          WHERE CompanyId = @Id;",
+                new { Id = id });
 
-            company.LocationIds = (await con.QueryAsync<int>(locationSql, new { Id = id })).ToList();
-            company.SessionIds = (await con.QueryAsync<int>(sessionSql, new { Id = id })).ToList();
-            company.CuisineIds = (await con.QueryAsync<int>(cuisineSql, new { Id = id })).ToList();
+            var sessionTimings = await con.QueryAsync<CompanySessionTimeDto>(
+                @"SELECT
+              csm.SessionId,
+              sm.SessionName,
+              csm.FromTime,
+              csm.ToTime
+          FROM dbo.CompanySessionMapping csm
+          INNER JOIN dbo.Session sm ON sm.Id = csm.SessionId
+          WHERE csm.CompanyId = @Id
+            AND csm.IsActive = 1;",
+                new { Id = id });
 
-            company.Password = string.Empty;
+            company.LocationIds = locationIds.ToList();
+            company.CuisineIds = cuisineIds.ToList();
+            company.SessionTimings = sessionTimings.ToList();
 
             return company;
         }
@@ -120,29 +109,29 @@ WHERE CompanyId = @Id;";
 
             try
             {
-                // Duplicate company code check
                 var existingCompanyCode = await con.ExecuteScalarAsync<int>(
                     @"SELECT COUNT(1)
-                      FROM dbo.CompanyMaster
-                      WHERE CompanyCode = @CompanyCode
-                        AND (@Id IS NULL OR Id <> @Id);",
+                  FROM dbo.CompanyMaster
+                  WHERE CompanyCode = @CompanyCode
+                    AND (@Id IS NULL OR Id <> @Id);",
                     new { dto.CompanyCode, dto.Id },
                     tx);
 
                 if (existingCompanyCode > 0)
                     throw new Exception("Company code already exists.");
 
-                // Duplicate email check in company table
                 var existingCompanyEmail = await con.ExecuteScalarAsync<int>(
                     @"SELECT COUNT(1)
-                      FROM dbo.CompanyMaster
-                      WHERE Email = @Email
-                        AND (@Id IS NULL OR Id <> @Id);",
+                  FROM dbo.CompanyMaster
+                  WHERE Email = @Email
+                    AND (@Id IS NULL OR Id <> @Id);",
                     new { dto.Email, dto.Id },
                     tx);
 
                 if (existingCompanyEmail > 0)
                     throw new Exception("Company email already exists.");
+
+                int companyId;
 
                 if (dto.Id.HasValue && dto.Id.Value > 0)
                 {
@@ -166,13 +155,11 @@ WHERE Id = @Id;
 
 SELECT @Id;";
 
-                    var companyId = await con.ExecuteScalarAsync<int>(updateSql, dto, tx);
+                    companyId = await con.ExecuteScalarAsync<int>(updateSql, dto, tx);
 
-                    // Update linked login user also
                     const string updateUserSql = @"
 UPDATE dbo.UserMaster
 SET
-    
     Email       = @Email,
     IsActive    = @IsActive,
     UpdatedBy   = @UserId,
@@ -186,14 +173,12 @@ WHERE CompanyId = @CompanyId
 
                     await con.ExecuteAsync(updateUserSql, new
                     {
-                        ContactPerson= dto.ContactPerson,
-                        Email = dto.Email,
-                        IsActive = dto.IsActive,
-                        UserId = dto.UserId,
+                        dto.Email,
+                        dto.IsActive,
+                        dto.UserId,
                         CompanyId = companyId
                     }, tx);
 
-                    // Optional password update if password passed
                     if (!string.IsNullOrWhiteSpace(dto.Password))
                     {
                         var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
@@ -214,24 +199,20 @@ WHERE CompanyId = @CompanyId
                         await con.ExecuteAsync(updatePasswordSql, new
                         {
                             PasswordHash = passwordHash,
-                            UserId = dto.UserId,
+                            dto.UserId,
                             CompanyId = companyId
                         }, tx);
                     }
-                    await SaveCompanyMappingsAsync(con, tx, dto, companyId);
-                    tx.Commit();
-                    return companyId;
                 }
                 else
                 {
                     if (string.IsNullOrWhiteSpace(dto.Password))
                         throw new Exception("Password is required for new company.");
 
-                    // Check duplicate username/email in user table
                     var existingUsername = await con.ExecuteScalarAsync<int>(
                         @"SELECT COUNT(1)
-                          FROM dbo.UserMaster
-                          WHERE Username = @Email OR Email = @Email;",
+                      FROM dbo.UserMaster
+                      WHERE Username = @Email OR Email = @Email;",
                         new { dto.Email },
                         tx);
 
@@ -240,8 +221,8 @@ WHERE CompanyId = @CompanyId
 
                     var adminRoleId = await con.ExecuteScalarAsync<int?>(
                         @"SELECT TOP 1 Id
-                          FROM dbo.RoleMaster
-                          WHERE RoleCode = 'ADMIN' AND IsActive = 1;",
+                      FROM dbo.RoleMaster
+                      WHERE RoleCode = 'ADMIN' AND IsActive = 1;",
                         transaction: tx);
 
                     if (!adminRoleId.HasValue)
@@ -283,7 +264,7 @@ VALUES
 
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-                    var companyId = await con.ExecuteScalarAsync<int>(insertCompanySql, dto, tx);
+                    companyId = await con.ExecuteScalarAsync<int>(insertCompanySql, dto, tx);
 
                     var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
 
@@ -315,24 +296,26 @@ VALUES
                     {
                         CompanyId = companyId,
                         RoleId = adminRoleId.Value,
-                        Username = dto.Email,   // email தான் username
+                        Username = dto.Email,
                         Email = dto.Email,
                         PasswordHash = passwordHash,
                         CreatedBy = dto.UserId
                     }, tx);
-                    await SaveCompanyMappingsAsync(con, tx, dto, companyId);
-                    tx.Commit();
-                    return companyId;
                 }
+
+                await SaveCompanyMappingsAsync(con, tx, dto, companyId);
+
+                tx.Commit();
+                return companyId;
             }
             catch
             {
                 tx.Rollback();
                 throw;
-               
             }
         }
 
+      
         public async Task<bool> DeleteAsync(int id, int? userId)
         {
             using var con = _context.CreateConnection();
@@ -373,20 +356,29 @@ WHERE CompanyId = @Id;";
         }
         private async Task SaveCompanyMappingsAsync(IDbConnection con, IDbTransaction tx, CompanySaveDto dto, int companyId)
         {
-            await con.ExecuteAsync("DELETE FROM dbo.CompanyLocationMap WHERE CompanyId = @CompanyId;",
+            await con.ExecuteAsync(
+                "DELETE FROM dbo.CompanyLocationMap WHERE CompanyId = @CompanyId;",
                 new { CompanyId = companyId }, tx);
 
-            await con.ExecuteAsync("DELETE FROM dbo.CompanySessionMap WHERE CompanyId = @CompanyId;",
+            await con.ExecuteAsync(
+                "DELETE FROM dbo.CompanySessionMap WHERE CompanyId = @CompanyId;",
                 new { CompanyId = companyId }, tx);
 
-            await con.ExecuteAsync("DELETE FROM dbo.CompanyCuisineMap WHERE CompanyId = @CompanyId;",
+            await con.ExecuteAsync(
+                "DELETE FROM dbo.CompanySessionMapping WHERE CompanyId = @CompanyId;",
+                new { CompanyId = companyId }, tx);
+
+            await con.ExecuteAsync(
+                "DELETE FROM dbo.CompanyCuisineMap WHERE CompanyId = @CompanyId;",
                 new { CompanyId = companyId }, tx);
 
             if (dto.LocationIds != null && dto.LocationIds.Any())
             {
                 const string locationSql = @"
-INSERT INTO dbo.CompanyLocationMap (CompanyId, LocationId, CreatedBy, CreatedDate)
-VALUES (@CompanyId, @LocationId, @CreatedBy, GETDATE());";
+INSERT INTO dbo.CompanyLocationMap
+(CompanyId, LocationId, CreatedBy, CreatedDate)
+VALUES
+(@CompanyId, @LocationId, @CreatedBy, GETDATE());";
 
                 foreach (var locationId in dto.LocationIds.Distinct())
                 {
@@ -399,18 +391,47 @@ VALUES (@CompanyId, @LocationId, @CreatedBy, GETDATE());";
                 }
             }
 
-            if (dto.SessionIds != null && dto.SessionIds.Any())
-            {
-                const string sessionSql = @"
-INSERT INTO dbo.CompanySessionMap (CompanyId, SessionId, CreatedBy, CreatedDate)
-VALUES (@CompanyId, @SessionId, @CreatedBy, GETDATE());";
+            var sessionRows = (dto.SessionTimings ?? new List<CompanySessionTimeDto>())
+                .Where(x => x.SessionId > 0)
+                .GroupBy(x => x.SessionId)
+                .Select(g => g.First())
+                .ToList();
 
-                foreach (var sessionId in dto.SessionIds.Distinct())
+            if (sessionRows.Any())
+            {
+                const string sessionMapSql = @"
+INSERT INTO dbo.CompanySessionMap
+(CompanyId, SessionId, CreatedBy, CreatedDate)
+VALUES
+(@CompanyId, @SessionId, @CreatedBy, GETDATE());";
+
+                foreach (var session in sessionRows)
                 {
-                    await con.ExecuteAsync(sessionSql, new
+                    await con.ExecuteAsync(sessionMapSql, new
                     {
                         CompanyId = companyId,
-                        SessionId = sessionId,
+                        SessionId = session.SessionId,
+                        CreatedBy = dto.UserId
+                    }, tx);
+                }
+
+                const string sessionTimingSql = @"
+INSERT INTO dbo.CompanySessionMapping
+(CompanyId, SessionId, FromTime, ToTime, IsActive, CreatedBy, CreatedDate)
+VALUES
+(@CompanyId, @SessionId, @FromTime, @ToTime, 1, @CreatedBy, GETDATE());";
+
+                foreach (var session in sessionRows)
+                {
+                    if (session.FromTime == default || session.ToTime == default)
+                        continue;
+
+                    await con.ExecuteAsync(sessionTimingSql, new
+                    {
+                        CompanyId = companyId,
+                        SessionId = session.SessionId,
+                        FromTime = session.FromTime,
+                        ToTime = session.ToTime,
                         CreatedBy = dto.UserId
                     }, tx);
                 }
@@ -419,8 +440,10 @@ VALUES (@CompanyId, @SessionId, @CreatedBy, GETDATE());";
             if (dto.CuisineIds != null && dto.CuisineIds.Any())
             {
                 const string cuisineSql = @"
-INSERT INTO dbo.CompanyCuisineMap (CompanyId, CuisineId, CreatedBy, CreatedDate)
-VALUES (@CompanyId, @CuisineId, @CreatedBy, GETDATE());";
+INSERT INTO dbo.CompanyCuisineMap
+(CompanyId, CuisineId, CreatedBy, CreatedDate)
+VALUES
+(@CompanyId, @CuisineId, @CreatedBy, GETDATE());";
 
                 foreach (var cuisineId in dto.CuisineIds.Distinct())
                 {
@@ -433,5 +456,7 @@ VALUES (@CompanyId, @CuisineId, @CreatedBy, GETDATE());";
                 }
             }
         }
+
+
     }
 }

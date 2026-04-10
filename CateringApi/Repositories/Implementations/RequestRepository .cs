@@ -68,17 +68,23 @@ WHERE clm.CompanyId = @CompanyId
   AND l.IsActive = 1
 ORDER BY l.Id;";
 
+            const string siteSettingsSql = @"
+SELECT OrderDays
+FROM SiteSettings";
+
             var companies = await con.QueryAsync<DropdownDto>(companySql, new { CompanyId = companyId ?? 0 });
             var sessions = await con.QueryAsync<DropdownDto>(sessionSql, new { CompanyId = companyId ?? 0 });
             var cuisines = await con.QueryAsync<DropdownDto>(cuisineSql, new { CompanyId = companyId ?? 0 });
             var locations = await con.QueryAsync<DropdownDto>(locationSql, new { CompanyId = companyId ?? 0 });
+            var orderDays = await con.QueryFirstOrDefaultAsync<int?>(siteSettingsSql);
 
             return new RequestPageMasterDto
             {
                 Companies = companies,
                 Sessions = sessions,
                 Cuisines = cuisines,
-                Locations = locations
+                Locations = locations,
+                OrderDays = orderDays ?? 3
             };
         }
 
@@ -398,6 +404,19 @@ WHERE RequestHeaderId = @Id;";
                 tran.Rollback();
                 throw;
             }
+        }
+
+        public async Task<int> GetOrderDays()
+        {
+            using var con = _context.CreateConnection();  
+
+            const string siteSettingsSql = @"
+SELECT OrderDays
+FROM SiteSettings";
+             
+            var orderDays = await con.QueryFirstOrDefaultAsync<int?>(siteSettingsSql);
+
+            return orderDays ?? 3;
         }
     }
 }

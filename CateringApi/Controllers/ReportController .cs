@@ -29,7 +29,7 @@ namespace CateringApi.Controllers
                 return BadRequest("UserId is required.");
 
             if (model.FromDate.HasValue && model.ToDate.HasValue && model.FromDate > model.ToDate)
-                return BadRequest("From Date should not be greater than To Date.");
+                return BadRequest("From Date should not be greater than ToDate.");
 
             var (rows, totals) = await _repository.GetReportByDatesAsync(model);
 
@@ -38,6 +38,25 @@ namespace CateringApi.Controllers
                 data = rows,
                 foodTotals = totals
             });
+        }
+
+        [HttpPost("ExportReportExcel")]
+        public async Task<IActionResult> ExportReportExcel([FromBody] ReportFilterDto model)
+        {
+            var fileBytes = await _repository.ExportReportExcelAsync(model);
+
+            return File(
+                fileBytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                $"CSPL_ReportByDates_{DateTime.Now:dd-MM-yyyy}.xlsx"
+            );
+        }
+
+        [HttpPost("SendReportEmail")]
+        public async Task<IActionResult> SendReportEmail([FromBody] ReportEmailRequestDto model)
+        {
+            await _repository.SendReportEmailAsync(model);
+            return Ok(new { message = "Report mail sent successfully" });
         }
     }
 }
