@@ -1,11 +1,12 @@
-﻿using CateringApi.DTOs.Company;
+﻿using CateringApi.DTOModel;
+using CateringApi.DTOs.Company;
 using CateringApi.DTOs.Item;
 using CateringApi.DTOs.Master;
 using CateringApi.DTOs.Request;
+using CateringApi.DTOs.RequestOverride;
 using CateringApi.DTOs.Scanner;
 using CateringApi.Models;
 using Microsoft.EntityFrameworkCore;
-using CateringApi.DTOModel;
 using static System.Collections.Specialized.BitVector32;
 
 namespace CateringApi.Data
@@ -25,6 +26,7 @@ namespace CateringApi.Data
         //public DbSet<SessionDTO> Sessions { get; set; }
         public DbSet<Session> Session { get; set; }
         public DbSet<QrImage> QrImage { get; set; }
-       
+        public DbSet<RequestOverride> RequestOverride { get; set; }
+
     }
 }

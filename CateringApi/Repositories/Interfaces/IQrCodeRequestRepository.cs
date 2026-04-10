@@ -14,8 +14,8 @@ namespace CateringApi.Repositories.Interfaces
         public  Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int requestId);
            //    public Task<List<QrCodeRequest>> GetAllQRModel();
         public  Task<QrCodeRequestModel> DeleteQrCode(int id, int userId);
-        public  Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id, int requestId);
-        public  Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id);
+       // public  Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id, int requestId);
+      //  public  Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id);
 
         public Task<QrCodeRequestModel> AddUpdateQrWithImagesAsync(QrCodeRequestModel model);
        // public  Task<QrResultDto> GenerateQr(QrCodeRequest model);

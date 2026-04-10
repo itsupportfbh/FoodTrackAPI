@@ -52,17 +52,17 @@ namespace CateringApi.Controllers
             return await _qrCodeRequestRepository.GetAllQRList();
         }
         
-        [HttpGet]
-        public Task<List<QrCodeRequestModel>> GetAllQRModelbyrequestId(int id, int requestId)
-        {
-            return _qrCodeRequestRepository.GetAllQRModelbyId(id, requestId);
-        }
+        //[HttpGet]
+        //public Task<List<QrCodeRequestModel>> GetAllQRModelbyrequestId(int id, int requestId)
+        //{
+        //    return _qrCodeRequestRepository.GetAllQRModelbyId(id, requestId);
+        //}
 
-        [HttpGet]
-        public Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id)
-        {
-            return _qrCodeRequestRepository.GetAllQRModelbyId(id);
-        }
+        //[HttpGet]
+        //public Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id)
+        //{
+        //    return _qrCodeRequestRepository.GetAllQRModelbyId(id);
+        //}
         
         
 
