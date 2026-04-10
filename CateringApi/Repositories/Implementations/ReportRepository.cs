@@ -448,7 +448,29 @@ OPTION (MAXRECURSION 366);";
                 throw new Exception("Recipient email is required.");
 
             var excelBytes = await ExportReportExcelAsync(model);
-            var fileName = $"CSPL_ReportByDates_{DateTime.Now:dd-MM-yyyy}.xlsx";
+            string companyText = "AllCompanies";
+
+            if (model.CompanyId.HasValue && model.CompanyId.Value > 0)
+            {
+                using var con = _context.CreateConnection();
+
+                companyText = await con.QueryFirstOrDefaultAsync<string>(
+                    "SELECT CompanyName FROM dbo.CompanyMaster WHERE Id = @Id",
+                    new { Id = model.CompanyId.Value }
+                ) ?? "AllCompanies";
+            }
+
+            // safe file name
+            companyText = new string(companyText
+                .Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')
+                .ToArray());
+
+            if (string.IsNullOrWhiteSpace(companyText))
+            {
+                companyText = "AllCompanies";
+            }
+
+            var fileName = $"CSPL_ReportByDates_{DateTime.Now:dd-MM-yyyy}_{companyText}.xlsx";
 
             var subject = string.IsNullOrWhiteSpace(model.Subject)
                 ? "Report By Dates"
