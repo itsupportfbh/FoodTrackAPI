@@ -36,7 +36,7 @@ SELECT
     CreatedDate,
     UpdatedBy,
     UpdatedDate
-FROM dbo.CompanyMaster where isactive = 1
+FROM dbo.CompanyMaster
 ORDER BY CompanyName;";
 
             using var con = _context.CreateConnection();
