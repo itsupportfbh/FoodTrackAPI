@@ -279,7 +279,20 @@ namespace CateringApi.Repositories.Implementations
 
             string safeCompanyName = new string(model.CompanyName
                 .Where(char.IsLetterOrDigit)
-                .ToArray());
+                .ToArray())
+                .ToUpper();
+
+            DateTime validFrom = model.QRValidFrom;
+            DateTime validTill = model.QRValidTill;
+
+            string fromMonth = validFrom.ToString("MMM").ToUpper(); // APR
+            string tillMonth = validTill.ToString("MMM").ToUpper(); // MAY
+
+            string monthPart = fromMonth == tillMonth
+                ? fromMonth
+                : $"{fromMonth}-{tillMonth}";
+
+            string requestPart = $"RQ{model.RequestId}";
 
             string logoPath = Path.Combine(_env.WebRootPath, "Images", "CSPL Logo.png");
 
@@ -287,18 +300,17 @@ namespace CateringApi.Repositories.Implementations
 
             for (int i = 1; i <= totalQty; i++)
             {
-                // sample format:
-                // Unicode-CSPL_ABC_Rq_001
-                string uniqueCode = $"CSPL_{safeCompanyName}_Rq_{i:000}";
+                // Example:
+                // CSPL_COMPANY_APR_RQ12_001
+                // CSPL_COMPANY_APR-MAY_RQ12_001
+                string uniqueCode = $"CSPL{safeCompanyName}{monthPart}{requestPart}_{i:000}";
 
-                // plain text only
                 string qrText = uniqueCode;
 
                 using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.H);
                 var qrCode = new PngByteQRCode(qrData);
 
                 byte[] qrBytes = qrCode.GetGraphic(20);
-
                 byte[] finalQrBytes = AddLogoToQr(qrBytes, logoPath);
 
                 result.Add(new QrResultDto
@@ -486,12 +498,17 @@ namespace CateringApi.Repositories.Implementations
   </td>
 
   <td style='vertical-align:middle; text-align:center;'>
-    <h1 style='margin:0; font-size:28px; color:#ffffff; font-weight:700; letter-spacing:0.3px;'>
-      CSPL
-    </h1>
-    <p style='margin:8px 0 0; font-size:14px; color:#e8f0ff;'>
-      Please find all generated QR codes attached below.
-    </p>
+  <h1 style=""
+  margin:0;
+  font-size:40px;
+  color:#ffffff;
+  font-weight:700;
+  letter-spacing:1.5px;
+  font-family: 'Cinzel', serif;
+"">
+  CSPL
+</h1>
+    
   </td>
 
   <td style='width:110px;'>
