@@ -68,4 +68,10 @@
         public decimal TotalOverrideQty { get; set; }
         public DateTime? CreatedDate { get; set; }
     }
+    public class SaveRequestOverrideResultDto
+    {
+        public int Id { get; set; }
+        public int TotalQty { get; set; }
+        public int DifferentQty { get; set; } // positive extra qty only
+    }
 }
