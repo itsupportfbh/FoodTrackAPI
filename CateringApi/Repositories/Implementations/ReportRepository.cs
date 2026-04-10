@@ -158,50 +158,89 @@ WHERE Id = @UserId
         ds.EndDate
     FROM DateSeries ds
     WHERE ds.ReportDate < ds.EndDate
+),
+EffectiveRows AS
+(
+    SELECT
+        cm.CompanyName,
+        ds.ReportDate,
+        s.Id AS SessionSortId,
+        s.SessionName,
+        cu.Id AS CuisineSortId,
+        cu.CuisineName,
+        l.Id AS LocationSortId,
+        l.LocationName,
+        CASE
+            WHEN rod.Id IS NOT NULL
+                 AND ISNULL(rod.IsCancelled, 0) = 0
+                 AND ro.Id IS NOT NULL
+            THEN rod.OverrideQty
+            ELSE rd.Qty
+        END AS EffectiveQty
+    FROM DateSeries ds
+    INNER JOIN dbo.RequestHeader rh
+        ON rh.Id = ds.RequestHeaderId
+       AND rh.IsActive = 1
+    INNER JOIN dbo.RequestDetail rd
+        ON rd.RequestHeaderId = rh.Id
+       AND rd.IsActive = 1
+    INNER JOIN dbo.CompanyMaster cm
+        ON cm.Id = rh.CompanyId
+    INNER JOIN dbo.Session s
+        ON s.Id = rd.SessionId
+    INNER JOIN dbo.CuisineMaster cu
+        ON cu.Id = rd.CuisineId
+    INNER JOIN dbo.Location l
+        ON l.Id = rd.LocationId
+
+    OUTER APPLY
+    (
+        SELECT TOP 1 rox.Id
+        FROM dbo.RequestOverride rox
+        WHERE rox.RequestHeaderId = rh.Id
+          AND rox.IsActive = 1
+          AND ds.ReportDate BETWEEN CAST(rox.FromDate AS date) AND CAST(rox.ToDate AS date)
+        ORDER BY rox.Id DESC
+    ) roPick
+
+    LEFT JOIN dbo.RequestOverride ro
+        ON ro.Id = roPick.Id
+
+    LEFT JOIN dbo.RequestOverrideDetail rod
+        ON rod.RequestOverrideId = ro.Id
+       AND rod.RequestDetailId = rd.Id
+       AND rod.IsActive = 1
+
+    WHERE (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
+      AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
+      AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
+      AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
+      AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
+      AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
 )
 SELECT
-    cm.CompanyName,
-    ds.ReportDate,
-    s.SessionName,
-    cu.CuisineName,
-    l.LocationName,
-    SUM(rd.Qty) AS Count
-FROM DateSeries ds
-INNER JOIN dbo.RequestHeader rh
-    ON rh.Id = ds.RequestHeaderId
-INNER JOIN dbo.RequestDetail rd
-    ON rd.RequestHeaderId = rh.Id
-   AND rd.IsActive = 1
-INNER JOIN dbo.CompanyMaster cm
-    ON cm.Id = rh.CompanyId
-INNER JOIN dbo.Session s
-    ON s.Id = rd.SessionId
-INNER JOIN dbo.CuisineMaster cu
-    ON cu.Id = rd.CuisineId
-INNER JOIN dbo.Location l
-    ON l.Id = rd.LocationId
-WHERE rh.IsActive = 1
-  AND (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
-  AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
-  AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-  AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
-  AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
-  AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
+    CompanyName,
+    ReportDate,
+    SessionName,
+    CuisineName,
+    LocationName,
+    SUM(EffectiveQty) AS Count
+FROM EffectiveRows
 GROUP BY
-    cm.CompanyName,
-    ds.ReportDate,
-    s.Id,
-    s.SessionName,
-    cu.Id,
-    cu.CuisineName,
-    l.Id,
-    l.LocationName
+    CompanyName,
+    ReportDate,
+    SessionSortId,
+    SessionName,
+    CuisineSortId,
+    CuisineName,
+    LocationSortId,
+    LocationName
 ORDER BY
-    cm.CompanyName,
-    ds.ReportDate DESC,
-    s.Id,
-    cu.Id,
-    l.Id
+    CompanyName,
+    ReportDate DESC,
+    SessionSortId,
+    CuisineSortId,
+    LocationSortId
 OPTION (MAXRECURSION 366);";
 
             // 🔥 FOOD TOTAL (NEW)
@@ -223,27 +262,59 @@ OPTION (MAXRECURSION 366);";
         ds.EndDate
     FROM DateSeries ds
     WHERE ds.ReportDate < ds.EndDate
+),
+EffectiveRows AS
+(
+    SELECT
+        cu.CuisineName,
+        CASE
+            WHEN rod.Id IS NOT NULL
+                 AND ISNULL(rod.IsCancelled, 0) = 0
+                 AND ro.Id IS NOT NULL
+            THEN rod.OverrideQty
+            ELSE rd.Qty
+        END AS EffectiveQty
+    FROM DateSeries ds
+    INNER JOIN dbo.RequestHeader rh
+        ON rh.Id = ds.RequestHeaderId
+       AND rh.IsActive = 1
+    INNER JOIN dbo.RequestDetail rd
+        ON rd.RequestHeaderId = rh.Id
+       AND rd.IsActive = 1
+    INNER JOIN dbo.CuisineMaster cu
+        ON cu.Id = rd.CuisineId
+
+    OUTER APPLY
+    (
+        SELECT TOP 1 rox.Id
+        FROM dbo.RequestOverride rox
+        WHERE rox.RequestHeaderId = rh.Id
+          AND rox.IsActive = 1
+          AND ds.ReportDate BETWEEN CAST(rox.FromDate AS date) AND CAST(rox.ToDate AS date)
+        ORDER BY rox.Id DESC
+    ) roPick
+
+    LEFT JOIN dbo.RequestOverride ro
+        ON ro.Id = roPick.Id
+
+    LEFT JOIN dbo.RequestOverrideDetail rod
+        ON rod.RequestOverrideId = ro.Id
+       AND rod.RequestDetailId = rd.Id
+       AND rod.IsActive = 1
+
+    WHERE (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
+      AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
+      AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
+      AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
+      AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
+      AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
 )
 SELECT
-    cu.CuisineName,
-    SUM(rd.Qty) AS TotalQty
-FROM DateSeries ds
-INNER JOIN dbo.RequestHeader rh
-    ON rh.Id = ds.RequestHeaderId
-INNER JOIN dbo.RequestDetail rd
-    ON rd.RequestHeaderId = rh.Id
-   AND rd.IsActive = 1
-INNER JOIN dbo.CuisineMaster cu
-    ON cu.Id = rd.CuisineId
-WHERE rh.IsActive = 1
-  AND (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
-  AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
-  AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-  AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
-  AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
-  AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
-GROUP BY cu.CuisineName
-ORDER BY cu.CuisineName
+    CuisineName,
+    SUM(EffectiveQty) AS TotalQty
+FROM EffectiveRows
+GROUP BY CuisineName
+ORDER BY CuisineName
 OPTION (MAXRECURSION 366);";
 
             var rows = await con.QueryAsync<ReportByDateRowDto>(mainSql, new
