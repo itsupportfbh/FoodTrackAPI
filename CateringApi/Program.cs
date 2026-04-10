@@ -80,7 +80,7 @@ builder.Services.AddScoped<IQrValidationRepository, QrValidationRepository>();
 builder.Services.AddScoped<IRequestOverrideRepository, RequestOverrideRepository>();
 builder.Services.AddScoped<IDashboardRepository,DashboardRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
-
+builder.Services.AddScoped<IUserMasterRepository, UserMasterRepository>();
 // Service registrations
 builder.Services.AddScoped<IJwtService, JwtService>();
 
