@@ -53,7 +53,7 @@ namespace CateringApi.Repositories.Implementations
             await _context.SaveChangesAsync();
         }
 
-        public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode, int RequestId, int CompanyId)
+        public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode)
         {
 
             var now = DateTime.Now;
@@ -63,7 +63,15 @@ namespace CateringApi.Repositories.Implementations
             if (qrImage == null || qrImage.Id == 0)
                 return Fail("Invalid QR code.");
 
-            var request = await GetQrRequestByIdAsync(RequestId);
+            var qrCodeRequest = await _context.QrCodeRequest
+                                     .AsNoTracking()
+                                     .FirstOrDefaultAsync(q =>
+                                                          q.Id == qrImage.Qrcoderequestid);
+
+            if (qrCodeRequest == null || qrCodeRequest.RequestId == 0)
+                return Fail("Invalid QR code.");
+
+            var request = await GetQrRequestByIdAsync(qrCodeRequest.RequestId);
 
             if (request == null)
                 return Fail("QR request not found.");
@@ -85,15 +93,15 @@ namespace CateringApi.Repositories.Implementations
 
             // 3. Check session time window for this request
             var sessionList = await (from ss in _context.Session
-                                      join rd in _context.RequestDetail on ss.Id equals rd.SessionId
-                                      where rd.RequestHeaderId == RequestId && ss.IsActive && rd.IsActive
-                                      select new
-                                      {
-                                          ss.Id,
-                                          ss.SessionName,
-                                          ss.FromTime,
-                                          ss.ToTime
-                                      }).ToListAsync();
+                                     join rd in _context.RequestDetail on ss.Id equals rd.SessionId
+                                     where rd.RequestHeaderId == qrCodeRequest.RequestId && ss.IsActive && rd.IsActive
+                                     select new
+                                     {
+                                         ss.Id,
+                                         ss.SessionName,
+                                         ss.FromTime,
+                                         ss.ToTime
+                                     }).ToListAsync();
 
             // Determine which sessions currently apply (compare only hours and minutes, ignore seconds)
             var nowTime = now.TimeOfDay;

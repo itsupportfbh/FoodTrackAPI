@@ -91,9 +91,9 @@ namespace CateringApi.Controllers
             return await _qrCodeRequestRepository.GenerateUniqueQrs(model);
         }
         [HttpGet]
-        public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode, int RequestId, int CompanyId)
+        public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode)
         {
-            return  await _qrvalidationrepo.ValidateScanAsync(UniqueCode, RequestId, CompanyId); 
+            return  await _qrvalidationrepo.ValidateScanAsync(UniqueCode); 
         }
         [HttpDelete("DeleteQR/{id}")]
         public async Task<IActionResult> DeleteQR(int id, [FromQuery] int userId)
