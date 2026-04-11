@@ -77,7 +77,7 @@ namespace CateringApi.Controllers
             });
 
         }
-        [HttpPost("AddUpdateQrWithImagesAsync")]
+        [HttpPost("AddUpdateQrWithImages")]
 
         public async Task<IActionResult> AddUpdateQrWithImagesAsync([FromBody] QrCodeRequestModel model)
         {
@@ -110,3 +110,6 @@ namespace CateringApi.Controllers
                 message = "QR record deleted successfully",
                 data
             });
+        }
+    }
+}
