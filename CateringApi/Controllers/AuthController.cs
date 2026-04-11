@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
-    [Route("[controller]/[action]")]
+    [Route("api/[controller]")]
     [ApiController]
     public class AuthController : ControllerBase
     {
@@ -18,7 +18,7 @@ namespace CateringApi.Controllers
             _jwtService = jwtService;
         }
 
-        [HttpPost]
+        [HttpPost("Login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
         {
             if (request == null ||
@@ -102,7 +102,7 @@ namespace CateringApi.Controllers
         //    return Ok(result);
         //}
 
-        [HttpPost]
+        [HttpPost("ForgotPassword")]
         public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
         {
             var result = await _authRepository.ForgotPasswordAsync(dto);
@@ -113,7 +113,7 @@ namespace CateringApi.Controllers
             return Ok(result);
         }
 
-        [HttpPost]
+        [HttpPost("ResetPassword")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
         {
             var result = await _authRepository.ResetPasswordAsync(dto);
@@ -124,7 +124,7 @@ namespace CateringApi.Controllers
             return Ok(result);
         }
 
-        [HttpPost]
+        [HttpPost("ChangePassword")]
         public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto dto)
         {
             var result = await _authRepository.ChangePasswordAsync(dto);

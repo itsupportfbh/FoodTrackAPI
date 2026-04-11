@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
-    [Route("[controller]/[action]")]
+    [Route("api/[controller]")]
     [ApiController]
     public class UserMasterController : ControllerBase
     {
@@ -18,7 +18,7 @@ namespace CateringApi.Controllers
         {
             _userMasterRepository = userMasterRepository;
         }
-        [HttpGet]
+        [HttpGet("GetAllUserMaster")]
         public async Task<IActionResult> GetAllUserMaster(
             [FromQuery] long userId,
             [FromQuery] int roleId,
@@ -30,7 +30,7 @@ namespace CateringApi.Controllers
         }
 
 
-        [HttpGet]
+        [HttpGet("GetUserMasterById")]
         public async Task<IActionResult> GetUserMasterById(int id)
         {
             var licenseObj = await _userMasterRepository.GetByIdAsync(id);
@@ -40,7 +40,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpPost]
+        [HttpPost("CreateUserMaster")]
         public async Task<ActionResult> CreateUserMaster(CreateUserMasterDto userMaster)
         {
 
@@ -50,7 +50,7 @@ namespace CateringApi.Controllers
 
         }
 
-        [HttpPut]
+        [HttpPut("UpdateUserMaster")]
         public async Task<IActionResult> UpdateUserMaster(UserMaster userMaster)
         {
             await _userMasterRepository.UpdateAsync(userMaster);
@@ -60,7 +60,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpDelete]
+        [HttpDelete("DeleteUserMaster")]
         public async Task<IActionResult> DeleteUserMaster(int id, int updatedBy)
         {
             await _userMasterRepository.DeleteAsync(id, updatedBy);

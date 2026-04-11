@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
-    [Route("[controller]/[action]")]
+    [Route("api/[controller]")]
     [ApiController]
     public class SiteSettingsController : ControllerBase
     {
@@ -14,7 +14,7 @@ namespace CateringApi.Controllers
         {
             _siteSettingsRepository = siteSettingsRepository;
         }
-        [HttpGet]
+        [HttpGet("GetSitesettingsbyid")]
         public async Task<SiteSettings?> GetSitesettingsbyid(int id)
         {
             var result = await _siteSettingsRepository.GetSiteSettingsbyid(id);
@@ -25,26 +25,26 @@ namespace CateringApi.Controllers
 
                 return result;
         }
-        [HttpGet]
+        [HttpGet("GetAllSiteSettings")]
         public List<SiteSettings> GetAllSiteSettings()
         {
             var result=_siteSettingsRepository.GetAllSiteSettings();
             return result;
         }
-        [HttpPost]
+        [HttpPost("AddUpdateSiteSettings")]
         public Task<SiteSettings> AddUpdateSiteSettings(SiteSettings model)
         {
             var result = _siteSettingsRepository.AddUpdateSiteSettings(model);
             return result;
      
         }
-        [HttpDelete]
+        [HttpDelete("DeleteSiteSettings")]
         public SiteSettings DeleteSiteSettings(int id, int? userId)
         {
             var result = _siteSettingsRepository.DeleteSiteSettings(id, userId);
             return result;
         }
-        [HttpGet]
+        [HttpGet("GetLatestSiteSetting")]
         public async Task<SiteSettings?> GetLatestSiteSetting()
         {
             return await _siteSettingsRepository.GetLatestSiteSetting();
