@@ -45,9 +45,24 @@ namespace CateringApi.Controllers
             return result;
         }
         [HttpGet]
-        public async Task<SiteSettings?> GetLatestSiteSetting()
+        public async Task<IActionResult> GetLatestSiteSetting()
         {
-            return await _siteSettingsRepository.GetLatestSiteSetting();
+            var setting = await _siteSettingsRepository.GetLatestSiteSetting();
+
+            if (setting == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    message = "Site settings not found"
+                });
+            }
+
+            return Ok(new
+            {
+                success = true,
+                data = setting
+            });
         }
     }
 }
