@@ -122,13 +122,29 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 // CORS
+//builder.Services.AddCors(options =>
+//{
+//    options.AddPolicy("AllowFrontend", policy =>
+//    {
+//        policy.WithOrigins(
+//                "https://qr.fbh.com.sg",
+//                "http://localhost:4200"
+//              )
+//              .AllowAnyHeader()
+//              .AllowAnyMethod();
+//    });
+//});
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.WithOrigins(
                 "https://qr.fbh.com.sg",
-                "http://localhost:4200"
+                "http://localhost:4200",
+                "http://localhost",
+                "https://localhost",
+                "capacitor://localhost"
               )
               .AllowAnyHeader()
               .AllowAnyMethod();
