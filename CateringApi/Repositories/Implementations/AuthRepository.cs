@@ -204,7 +204,7 @@ VALUES
                         Token = token
                     });
 
-                    string frontendBaseUrl = _configuration["AppSettings:FrontendBaseUrl"] ?? "http://localhost:4200";
+                    string frontendBaseUrl = _configuration["AppSettings:FrontendBaseUrl"] ?? "https://qr.fbh.com.sg";
                     string resetLink = $"{frontendBaseUrl}/pages/authentication/reset-password?email={Uri.EscapeDataString(dto.Email)}&token={token}";
 
                     string subject = "Reset Password - UnityWorks ERP";
