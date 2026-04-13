@@ -1,5 +1,6 @@
 ﻿using CateringApi.Data;
 using CateringApi.DTOModel;
+using CateringApi.DTOs.Company;
 using CateringApi.DTOs.Scanner;
 using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
@@ -118,9 +119,7 @@ namespace CateringApi.Repositories.Implementations
             if (qrCodeRequest == null)
                 return Fail("QR request not found.");
 
-            // IMPORTANT:
-            // Historical OverrideId check panna koodadhu.
-            // QR batch own validity dhaan source of truth.
+            // QR batch validity only
             if (today < qrCodeRequest.QRValidFrom.Date)
                 return Fail($"QR is not yet valid. Valid from {qrCodeRequest.QRValidFrom:dd-MM-yyyy}.");
 
@@ -133,56 +132,54 @@ namespace CateringApi.Repositories.Implementations
             if (requestHeader == null)
                 return Fail("Request not found.");
 
-            // Find today's matching session from request details
+            // Company-specific session timing
             var sessionList = await (
-                from ss in _context.Session
-                join rd in _context.RequestDetail on ss.Id equals rd.SessionId
+                from rd in _context.RequestDetail
+                join s in _context.Session on rd.SessionId equals s.Id
+                join csm in _context.CompanySessionMapping
+                    on new { SessionId = rd.SessionId, CompanyId = requestHeader.CompanyId }
+                    equals new { SessionId = csm.SessionId, CompanyId = csm.CompanyId }
                 where rd.RequestHeaderId == qrCodeRequest.RequestId
-                      && ss.IsActive
                       && rd.IsActive
-                select new
+                      && s.IsActive
+                      && csm.IsActive
+                select new CompanySessionMappingDto
                 {
-                    ss.Id,
-                    ss.SessionName,
-                    ss.FromTime,
-                    ss.ToTime
+                    CompanyId = csm.CompanyId,
+                    SessionId = s.Id,
+                    SessionName = s.SessionName,
+                    FromTime = csm.FromTime,
+                    ToTime = csm.ToTime,
+                    IsActive = csm.IsActive
                 }
             )
             .Distinct()
             .ToListAsync();
 
+            if (sessionList == null || sessionList.Count == 0)
+                return Fail("No session timing configured for this company.");
+
             var matchingSession = sessionList
-                .Where(s => s.FromTime.HasValue && s.ToTime.HasValue)
-                .Select(s => new
-                {
-                    s.Id,
-                    s.SessionName,
-                    From = new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0),
-                    To = new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0)
-                })
                 .FirstOrDefault(s =>
-                    // normal session
-                    (s.From <= s.To && nowTime >= s.From && nowTime <= s.To)
-                    ||
-                    // overnight session
-                    (s.From > s.To && (nowTime >= s.From || nowTime <= s.To))
+                    (s.FromTime <= s.ToTime && nowTime >= s.FromTime && nowTime <= s.ToTime) ||
+                    (s.FromTime > s.ToTime && (nowTime >= s.FromTime || nowTime <= s.ToTime))
                 );
 
             if (matchingSession == null)
-                return Fail("Scanning not allowed at this time for the request's session.");
+                return Fail("Scanning not allowed at this time for the company's session timing.");
 
-            // SAME QR + SAME DAY + SAME SESSION => deny
+            // Same QR + same day + same session => deny
             var alreadyScannedThisSession = await _context.QrScanLog.AnyAsync(x =>
                 x.QrImageId == qrImage.Id &&
                 x.RequestId == qrCodeRequest.RequestId &&
-                x.SessionId == matchingSession.Id &&
+                x.SessionId == matchingSession.SessionId &&
                 x.ScanDate == today &&
                 x.IsAllowed);
 
             if (alreadyScannedThisSession)
                 return Fail($"Meal already collected for {matchingSession.SessionName}.");
 
-            // Find current active override for TODAY
+            // Find active override for today
             var activeOverride = await _context.RequestOverride
                 .Where(x =>
                     x.RequestHeaderId == qrCodeRequest.RequestId &&
@@ -196,22 +193,20 @@ namespace CateringApi.Repositories.Implementations
 
             if (activeOverride != null)
             {
-                // Override session qty
                 requiredQty = await _context.RequestOverrideDetail
                     .Where(x =>
                         x.RequestOverrideId == activeOverride.Id &&
-                        x.SessionId == matchingSession.Id &&
+                        x.SessionId == matchingSession.SessionId &&
                         x.IsActive &&
                         !x.IsCancelled)
                     .SumAsync(x => (int?)x.OverrideQty) ?? 0;
             }
             else
             {
-                // Base request session qty
                 requiredQty = await _context.RequestDetail
                     .Where(x =>
                         x.RequestHeaderId == qrCodeRequest.RequestId &&
-                        x.SessionId == matchingSession.Id &&
+                        x.SessionId == matchingSession.SessionId &&
                         x.IsActive)
                     .SumAsync(x => (int?)x.Qty) ?? 0;
             }
@@ -219,11 +214,10 @@ namespace CateringApi.Repositories.Implementations
             if (requiredQty <= 0)
                 return Fail($"No quantity configured for {matchingSession.SessionName}.");
 
-            // Today total successful scans for this request + session
             int usedQtyToday = await _context.QrScanLog
                 .Where(x =>
                     x.RequestId == qrCodeRequest.RequestId &&
-                    x.SessionId == matchingSession.Id &&
+                    x.SessionId == matchingSession.SessionId &&
                     x.ScanDate == today &&
                     x.IsAllowed)
                 .CountAsync();
@@ -231,20 +225,16 @@ namespace CateringApi.Repositories.Implementations
             if (usedQtyToday >= requiredQty)
                 return Fail($"{matchingSession.SessionName} quantity limit reached for today.");
 
-            // Mark last-use info only
             qrImage.IsUsed = true;
             qrImage.UsedDate = now;
             qrImage.QRScannedCount = (qrImage.QRScannedCount ?? 0) + 1;
 
-            await _context.SaveChangesAsync();
-
-            // Insert scan log
             var log = new QrScanLog
             {
                 QrImageId = qrImage.Id,
                 QrCodeRequestId = qrCodeRequest.Id,
                 RequestId = qrCodeRequest.RequestId,
-                SessionId = matchingSession.Id,
+                SessionId = matchingSession.SessionId,
                 ScanDate = today,
                 ScanDateTime = now,
                 UniqueCode = uniqueCode,
@@ -255,13 +245,14 @@ namespace CateringApi.Repositories.Implementations
             };
 
             _context.QrScanLog.Add(log);
+
             await _context.SaveChangesAsync();
 
             return new QrValidationResult
             {
                 IsAllowed = true,
                 Message = $"Access granted for {matchingSession.SessionName}. Enjoy your meal!",
-                SessionId = matchingSession.Id,
+                SessionId = matchingSession.SessionId,
                 SessionName = matchingSession.SessionName,
                 ScanTime = now
             };
