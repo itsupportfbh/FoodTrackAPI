@@ -38,7 +38,10 @@
     {
         public int Id { get; set; }
         public int RequestOverrideId { get; set; }
+        public int RequestDetailId { get; set; }
         public int SessionId { get; set; }
+        public int CuisineId { get; set; }
+        public int LocationId { get; set; }
         public int OverrideQty { get; set; }
         public bool IsActive { get; set; }
         public bool IsCancelled { get; set; }

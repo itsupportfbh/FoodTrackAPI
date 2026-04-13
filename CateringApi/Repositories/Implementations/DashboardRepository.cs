@@ -57,6 +57,15 @@ namespace CateringApi.Repositories.Implementations
                             requestIds.Contains(o.RequestHeaderId) &&
                             o.FromDate <= monthEnd &&
                             o.ToDate >= monthStart)
+                .Select(o => new
+                {
+                    o.Id,
+                    o.RequestHeaderId,
+                    o.FromDate,
+                    o.ToDate,
+                    o.CreatedDate,
+                    o.UpdatedDate
+                })
                 .ToListAsync();
 
             var overrideIds = monthOverrides.Select(x => x.Id).ToList();
@@ -65,30 +74,49 @@ namespace CateringApi.Repositories.Implementations
                 .Where(x => x.IsActive && requestIds.Contains(x.RequestHeaderId))
                 .Select(x => new
                 {
+                    RequestDetailId = x.Id,
                     x.RequestHeaderId,
                     x.SessionId,
+                    x.CuisineId,
+                    x.LocationId,
                     Qty = (decimal?)x.Qty ?? 0
                 })
                 .ToListAsync();
 
             var overrideDetails = await _context.RequestOverrideDetail
-                .Where(x => x.IsActive && overrideIds.Contains(x.RequestOverrideId) && !x.IsCancelled)
+                .Where(x => x.IsActive &&
+                            overrideIds.Contains(x.RequestOverrideId) &&
+                            !x.IsCancelled)
                 .Select(x => new
                 {
                     x.RequestOverrideId,
+                    x.RequestDetailId,
                     x.SessionId,
+                    x.CuisineId,
+                    x.LocationId,
                     Qty = (decimal?)x.OverrideQty ?? 0
                 })
                 .ToListAsync();
 
-            // =========================================
-            // ADD YOUR DAY-WISE LOGIC HERE
-            // =========================================
             decimal monthOrderedQty = 0;
             var effectiveRows = new List<DashboardEffectiveRow>();
 
             foreach (var req in monthRequests)
             {
+                var reqBaseRows = baseDetails
+                    .Where(x => x.RequestHeaderId == req.Id)
+                    .ToDictionary(
+                        x => x.RequestDetailId,
+                        x => new DashboardEffectiveRow
+                        {
+                            RequestDetailId = x.RequestDetailId,
+                            SessionId = x.SessionId,
+                            CuisineId = x.CuisineId,
+                            LocationId = x.LocationId,
+                            CompanyId = req.CompanyId,
+                            Qty = x.Qty
+                        });
+
                 for (var date = monthStart; date <= monthEnd; date = date.AddDays(1))
                 {
                     if (date < req.FromDate.Date || date > req.ToDate.Date)
@@ -98,73 +126,84 @@ namespace CateringApi.Repositories.Implementations
                         .Where(x => x.RequestHeaderId == req.Id &&
                                     x.FromDate.Date <= date &&
                                     x.ToDate.Date >= date)
-                        .OrderByDescending(x => x.Id)
+                        .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+                        .ThenByDescending(x => x.Id)
                         .FirstOrDefault();
+
+                    var effectiveDetailRows = reqBaseRows.ToDictionary(
+                        x => x.Key,
+                        x => new DashboardEffectiveRow
+                        {
+                            RequestDetailId = x.Value.RequestDetailId,
+                            SessionId = x.Value.SessionId,
+                            CuisineId = x.Value.CuisineId,
+                            LocationId = x.Value.LocationId,
+                            CompanyId = x.Value.CompanyId,
+                            Qty = x.Value.Qty
+                        });
 
                     if (ov != null)
                     {
                         var ovRows = overrideDetails
                             .Where(x => x.RequestOverrideId == ov.Id)
-                            .GroupBy(x => x.SessionId)
-                            .Select(g => new
-                            {
-                                SessionId = g.Key,
-                                Qty = g.Sum(v => v.Qty)
-                            })
                             .ToList();
 
-                        foreach (var row in ovRows)
+                        foreach (var ovRow in ovRows)
                         {
-                            monthOrderedQty += row.Qty;
-
-                            effectiveRows.Add(new DashboardEffectiveRow
+                            if (effectiveDetailRows.ContainsKey(ovRow.RequestDetailId))
                             {
-                                SessionId = row.SessionId,
-                                CompanyId = req.CompanyId,
-                                Qty = row.Qty
-                            });
+                                effectiveDetailRows[ovRow.RequestDetailId].Qty = ovRow.Qty;
+                            }
+                            else
+                            {
+                                effectiveDetailRows[ovRow.RequestDetailId] = new DashboardEffectiveRow
+                                {
+                                    RequestDetailId = ovRow.RequestDetailId,
+                                    SessionId = ovRow.SessionId,
+                                    CuisineId = ovRow.CuisineId,
+                                    LocationId = ovRow.LocationId,
+                                    CompanyId = req.CompanyId,
+                                    Qty = ovRow.Qty
+                                };
+                            }
                         }
                     }
-                    else
+
+                    foreach (var row in effectiveDetailRows.Values)
                     {
-                        var baseRows = baseDetails
-                            .Where(x => x.RequestHeaderId == req.Id)
-                            .GroupBy(x => x.SessionId)
-                            .Select(g => new
-                            {
-                                SessionId = g.Key,
-                                Qty = g.Sum(v => v.Qty)
-                            })
-                            .ToList();
+                        monthOrderedQty += row.Qty;
 
-                        foreach (var row in baseRows)
+                        effectiveRows.Add(new DashboardEffectiveRow
                         {
-                            monthOrderedQty += row.Qty;
-
-                            effectiveRows.Add(new DashboardEffectiveRow
-                            {
-                                SessionId = row.SessionId,
-                                CompanyId = req.CompanyId,
-                                Qty = row.Qty
-                            });
-                        }
+                            RequestDetailId = row.RequestDetailId,
+                            SessionId = row.SessionId,
+                            CuisineId = row.CuisineId,
+                            LocationId = row.LocationId,
+                            CompanyId = row.CompanyId,
+                            Qty = row.Qty
+                        });
                     }
                 }
             }
 
-            // session master
             var sessionMaster = await _context.Session
                 .Where(x => x.IsActive)
-                .Select(x => new { x.Id, x.SessionName })
+                .Select(x => new
+                {
+                    x.Id,
+                    x.SessionName
+                })
                 .ToListAsync();
 
-            // company master
             var companyMaster = await _context.CompanyMaster
                 .Where(x => x.IsActive)
-                .Select(x => new { x.Id, x.CompanyName })
+                .Select(x => new
+                {
+                    x.Id,
+                    x.CompanyName
+                })
                 .ToListAsync();
 
-            // month session totals
             var ordersBySession = effectiveRows
                 .GroupBy(x => x.SessionId)
                 .Select(g => new SessionOrderDTO
@@ -172,10 +211,10 @@ namespace CateringApi.Repositories.Implementations
                     SessionName = sessionMaster.FirstOrDefault(s => s.Id == g.Key)?.SessionName ?? "",
                     TotalQty = g.Sum(x => x.Qty)
                 })
+                .OrderByDescending(x => x.TotalQty)
                 .ToList();
 
-            // month company totals
-            var companyWiseOrders = effectiveRows
+            var allCompanyWiseOrders = effectiveRows
                 .GroupBy(x => x.CompanyId)
                 .Select(g => new CompanyOrderDTO
                 {
@@ -186,7 +225,6 @@ namespace CateringApi.Repositories.Implementations
                     PendingQty = 0
                 })
                 .OrderByDescending(x => x.TotalQty)
-                .Take(8)
                 .ToList();
 
             var todayCount = await _context.QrScanLog
@@ -229,7 +267,7 @@ namespace CateringApi.Repositories.Implementations
                 }
             ).ToDictionaryAsync(x => x.CompanyId, x => x.RedeemQty);
 
-            foreach (var item in companyWiseOrders)
+            foreach (var item in allCompanyWiseOrders)
             {
                 item.RedeemQty = monthRedeemMap.ContainsKey(item.CompanyId)
                     ? monthRedeemMap[item.CompanyId]
@@ -241,8 +279,13 @@ namespace CateringApi.Repositories.Implementations
                     item.PendingQty = 0;
             }
 
-            var monthRedeemedQty = companyWiseOrders.Sum(x => x.RedeemQty);
-            var monthPendingQty = companyWiseOrders.Sum(x => x.PendingQty);
+            var companyWiseOrders = allCompanyWiseOrders
+                .OrderByDescending(x => x.TotalQty)
+                .Take(8)
+                .ToList();
+
+            var monthRedeemedQty = allCompanyWiseOrders.Sum(x => x.RedeemQty);
+            var monthPendingQty = allCompanyWiseOrders.Sum(x => x.PendingQty);
 
             decimal todayOrderedQty = 0;
 
@@ -251,25 +294,68 @@ namespace CateringApi.Repositories.Implementations
                 if (today < req.FromDate.Date || today > req.ToDate.Date)
                     continue;
 
+                var reqBaseRows = baseDetails
+                    .Where(x => x.RequestHeaderId == req.Id)
+                    .ToDictionary(
+                        x => x.RequestDetailId,
+                        x => new DashboardEffectiveRow
+                        {
+                            RequestDetailId = x.RequestDetailId,
+                            SessionId = x.SessionId,
+                            CuisineId = x.CuisineId,
+                            LocationId = x.LocationId,
+                            CompanyId = req.CompanyId,
+                            Qty = x.Qty
+                        });
+
+                var effectiveDetailRows = reqBaseRows.ToDictionary(
+                    x => x.Key,
+                    x => new DashboardEffectiveRow
+                    {
+                        RequestDetailId = x.Value.RequestDetailId,
+                        SessionId = x.Value.SessionId,
+                        CuisineId = x.Value.CuisineId,
+                        LocationId = x.Value.LocationId,
+                        CompanyId = x.Value.CompanyId,
+                        Qty = x.Value.Qty
+                    });
+
                 var ov = monthOverrides
                     .Where(x => x.RequestHeaderId == req.Id &&
                                 x.FromDate.Date <= today &&
                                 x.ToDate.Date >= today)
-                    .OrderByDescending(x => x.Id)
+                    .OrderByDescending(x => x.UpdatedDate ?? x.CreatedDate)
+                    .ThenByDescending(x => x.Id)
                     .FirstOrDefault();
 
                 if (ov != null)
                 {
-                    todayOrderedQty += overrideDetails
+                    var ovRows = overrideDetails
                         .Where(x => x.RequestOverrideId == ov.Id)
-                        .Sum(x => x.Qty);
+                        .ToList();
+
+                    foreach (var ovRow in ovRows)
+                    {
+                        if (effectiveDetailRows.ContainsKey(ovRow.RequestDetailId))
+                        {
+                            effectiveDetailRows[ovRow.RequestDetailId].Qty = ovRow.Qty;
+                        }
+                        else
+                        {
+                            effectiveDetailRows[ovRow.RequestDetailId] = new DashboardEffectiveRow
+                            {
+                                RequestDetailId = ovRow.RequestDetailId,
+                                SessionId = ovRow.SessionId,
+                                CuisineId = ovRow.CuisineId,
+                                LocationId = ovRow.LocationId,
+                                CompanyId = req.CompanyId,
+                                Qty = ovRow.Qty
+                            };
+                        }
+                    }
                 }
-                else
-                {
-                    todayOrderedQty += baseDetails
-                        .Where(x => x.RequestHeaderId == req.Id)
-                        .Sum(x => x.Qty);
-                }
+
+                todayOrderedQty += effectiveDetailRows.Values.Sum(x => x.Qty);
             }
 
             decimal todayRedeemedQty = todayCount;
@@ -299,7 +385,10 @@ namespace CateringApi.Repositories.Implementations
 
         private class DashboardEffectiveRow
         {
+            public int RequestDetailId { get; set; }
             public int SessionId { get; set; }
+            public int CuisineId { get; set; }
+            public int LocationId { get; set; }
             public int CompanyId { get; set; }
             public decimal Qty { get; set; }
         }
