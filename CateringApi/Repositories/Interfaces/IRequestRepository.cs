@@ -10,5 +10,6 @@ namespace CateringApi.Repositories.Interfaces
         Task<int> SaveRequestAsync(RequestHeaderDto model);
         Task<bool> DeleteRequestAsync(int id, int? userId);
         Task<int> GetOrderDays();
+        Task<bool> CheckOverlapAsync(int companyId, DateTime fromDate, DateTime toDate, int id = 0);
     }
 }

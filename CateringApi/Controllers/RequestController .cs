@@ -1,4 +1,5 @@
 ﻿using CateringApi.Models;
+using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
@@ -95,6 +96,52 @@ namespace CateringApi.Controllers
         {
             var data = await _repository.GetOrderDays();
             return data;
+        }
+
+        [HttpGet("check-overlap")]
+        public async Task<IActionResult> CheckOverlap(
+    [FromQuery] int companyId,
+    [FromQuery] DateTime fromDate,
+    [FromQuery] DateTime toDate,
+    [FromQuery] int id = 0)
+        {
+            if (companyId <= 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "Invalid company id"
+                });
+            }
+
+            if (fromDate == default || toDate == default)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "From date and To date are required"
+                });
+            }
+
+            if (fromDate > toDate)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "From date cannot be greater than To date"
+                });
+            }
+
+            var isOverlap = await _repository.CheckOverlapAsync(companyId, fromDate, toDate, id);
+
+            return Ok(new
+            {
+                success = true,
+                isOverlap = isOverlap,
+                message = isOverlap
+                    ? "Order already exists for the selected date range"
+                    : "No overlap found"
+            });
         }
     }
 }

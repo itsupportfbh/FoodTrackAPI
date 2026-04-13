@@ -199,6 +199,34 @@ ORDER BY rd.Id;";
             {
                 var totalQty = model.Lines?.Sum(x => x.Qty) ?? 0;
 
+                const string overlapSql = @"
+SELECT TOP 1 rh.RequestNo
+FROM dbo.RequestHeader rh
+WHERE rh.IsActive = 1
+  AND rh.CompanyId = @CompanyId
+  AND (@Id = 0 OR rh.Id <> @Id)
+  AND rh.FromDate <= @ToDate
+  AND rh.ToDate >= @FromDate
+ORDER BY rh.Id DESC;";
+
+                var overlappedRequestNo = await con.QueryFirstOrDefaultAsync<string>(
+                    overlapSql,
+                    new
+                    {
+                        CompanyId = model.CompanyId,
+                        Id = model.Id ?? 0,
+                        FromDate = model.FromDate,
+                        ToDate = model.ToDate
+                    },
+                    tran
+                );
+
+                if (!string.IsNullOrWhiteSpace(overlappedRequestNo))
+                {
+                    throw new Exception($"Order already exists for the selected date range. Overlapping Order No: {overlappedRequestNo}");
+                }
+
+
                 if (model.Id.HasValue && model.Id.Value > 0)
                 {
                     const string updateHeaderSql = @"
@@ -421,5 +449,30 @@ FROM SiteSettings";
 
             return orderDays ?? 3;
         }
+
+        public async Task<bool> CheckOverlapAsync(int companyId, DateTime fromDate, DateTime toDate, int id = 0)
+        {
+            using var con = _context.CreateConnection();
+
+            const string sql = @"
+SELECT COUNT(1)
+FROM dbo.RequestHeader rh
+WHERE rh.IsActive = 1
+  AND rh.CompanyId = @CompanyId
+  AND (@Id = 0 OR rh.Id <> @Id)
+  AND rh.FromDate <= @ToDate
+  AND rh.ToDate >= @FromDate;";
+
+            var count = await con.ExecuteScalarAsync<int>(sql, new
+            {
+                CompanyId = companyId,
+                FromDate = fromDate,
+                ToDate = toDate,
+                Id = id
+            });
+
+            return count > 0;
+        }
     }
+
 }
