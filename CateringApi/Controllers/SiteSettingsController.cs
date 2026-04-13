@@ -44,7 +44,7 @@ namespace CateringApi.Controllers
             var result = _siteSettingsRepository.DeleteSiteSettings(id, userId);
             return result;
         }
-        [HttpGet]
+        [HttpGet("GetLatestSiteSetting")]
         public async Task<IActionResult> GetLatestSiteSetting()
         {
             var setting = await _siteSettingsRepository.GetLatestSiteSetting();
