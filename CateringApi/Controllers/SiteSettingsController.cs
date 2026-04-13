@@ -51,7 +51,7 @@ namespace CateringApi.Controllers
 
             if (setting == null)
             {
-                return NotFound(new
+                return Ok(new
                 {
                     success = false,
                     message = "Site settings not found"

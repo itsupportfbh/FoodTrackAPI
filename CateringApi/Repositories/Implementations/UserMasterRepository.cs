@@ -38,8 +38,6 @@ FROM UserMaster um
 INNER JOIN CompanyMaster cm ON cm.Id = um.CompanyId
 INNER JOIN RoleMaster rm ON rm.Id = um.RoleId
 WHERE 
-    um.IsDelete = 0
-    AND
     (
         @CurrentRoleId = 1
         OR
