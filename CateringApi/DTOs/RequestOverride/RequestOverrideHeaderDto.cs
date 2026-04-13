@@ -32,6 +32,7 @@
         public decimal BaseQty { get; set; }
         public decimal? OverrideQty { get; set; }
         public bool IsCancelled { get; set; }
+        public bool IsActive { get; set; }
     }
 
     public class SaveRequestOverrideDto

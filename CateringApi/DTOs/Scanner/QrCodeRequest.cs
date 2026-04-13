@@ -58,4 +58,9 @@ namespace CateringApi.DTOs.Scanner
        
 
     }
+    public class DateSegment
+    {
+        public DateTime FromDate { get; set; }
+        public DateTime TillDate { get; set; }
+    }
 }

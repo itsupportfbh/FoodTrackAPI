@@ -7,9 +7,9 @@ namespace CateringApi.Repositories.Interfaces
 {
     public interface IQrCodeRequestRepository
     {
-        public Task<List<RequestDropdownDto>> GetRequestIdDropdown();
-       // public Task<List<QrCodeRequest>> GetAllQR();
-
+        //  public Task<List<RequestDropdownDto>> GetRequestIdDropdown();
+        // public Task<List<QrCodeRequest>> GetAllQR();
+        Task<List<RequestDropdownDto>> GetQrPendingDropdown();
         public  Task<List<QrCodeRequestModel>> GetAllQRList();
         public  Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int requestId);
            //    public Task<List<QrCodeRequest>> GetAllQRModel();
