@@ -4,6 +4,7 @@ using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using CateringApi.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -20,7 +21,6 @@ builder.Services.AddDbContext<FoodDBContext>(options =>
 builder.Services.Configure<SmtpSettings>(
     builder.Configuration.GetSection("SmtpSettings"));
 
-
 builder.Services.AddSingleton<DapperContext>();
 
 builder.Services.AddControllers();
@@ -35,7 +35,6 @@ builder.Services.AddSwaggerGen(c =>
         Description = "Catering Management API"
     });
 
-    // JWT Swagger setup
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "Enter JWT token like this: Bearer {your token}",
@@ -78,9 +77,10 @@ builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IQrCodeRequestRepository, QrCodeRequestRepository>();
 builder.Services.AddScoped<IQrValidationRepository, QrValidationRepository>();
 builder.Services.AddScoped<IRequestOverrideRepository, RequestOverrideRepository>();
-builder.Services.AddScoped<IDashboardRepository,DashboardRepository>();
+builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
 builder.Services.AddScoped<IUserMasterRepository, UserMasterRepository>();
+
 // Service registrations
 builder.Services.AddScoped<IJwtService, JwtService>();
 
@@ -89,9 +89,11 @@ var jwtKey = builder.Configuration["Jwt:Key"];
 var jwtIssuer = builder.Configuration["Jwt:Issuer"];
 var jwtAudience = builder.Configuration["Jwt:Audience"];
 
-if (string.IsNullOrWhiteSpace(jwtKey))
+if (string.IsNullOrWhiteSpace(jwtKey) ||
+    string.IsNullOrWhiteSpace(jwtIssuer) ||
+    string.IsNullOrWhiteSpace(jwtAudience))
 {
-    throw new Exception("JWT Key is missing in appsettings.json");
+    throw new Exception("JWT settings are missing in appsettings.json");
 }
 
 builder.Services.AddAuthentication(options =>
@@ -101,7 +103,7 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false;
+    options.RequireHttpsMetadata = true;
     options.SaveToken = true;
 
     options.TokenValidationParameters = new TokenValidationParameters
@@ -122,9 +124,12 @@ builder.Services.AddAuthorization();
 // CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(
+                "https://qr.fbh.com.sg",
+                "http://localhost:4200"
+              )
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -132,30 +137,50 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// For reverse proxy / IIS / Nginx
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 // Configure middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
+
+    app.UseSwagger(c =>
+    {
+        c.RouteTemplate = "swagger/{documentName}/swagger.json";
+    });
+
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Catering API v1");
+        c.RoutePrefix = "swagger";
+    });
 }
-
-app.UseSwagger(c =>
+else
 {
-    c.RouteTemplate = "swagger/{documentName}/swagger.json";
-});
-
-app.UseSwaggerUI(c =>
-{
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Catering API v1");
-    c.RoutePrefix = "swagger";
-});
+    app.UseExceptionHandler("/error");
+    app.UseHsts();
+}
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowAll");
+// Angular static files from wwwroot
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Angular routes fallback
+app.MapFallbackToFile("index.html");
 
 app.Run();

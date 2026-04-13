@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
-    [Route("[controller]/[action]")]
+    [Route("api/[controller]")]
     [ApiController]
     public class LocationController : ControllerBase
     {
@@ -19,7 +19,7 @@ namespace CateringApi.Controllers
             _repository = repository;
         }
 
-        [HttpGet]
+        [HttpGet("GetAllLocation")]
         public async Task<IActionResult> GetAllLocation()
         {
             var list = await _repository.GetAllLocation();
@@ -31,7 +31,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpGet]
+        [HttpGet("GetLocationById")]
         public async Task<IActionResult> GetLocationById(int id)
         {
             var licenseObj = await _repository.GetLocationById(id);
@@ -41,7 +41,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpPost]
+        [HttpPost("CreateLocation")]
         public async Task<ActionResult> CreateLocation(LocationDTO locationDTO)
         {
 
@@ -51,7 +51,7 @@ namespace CateringApi.Controllers
 
         }
 
-        [HttpPut]
+        [HttpPut("UpdateLocation")]
         public async Task<IActionResult> UpdateLocation(LocationDTO locationDTO)
         {
             await _repository.UpdateLocation(locationDTO);
@@ -61,7 +61,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpDelete]
+        [HttpDelete("UpdateLocation")]
         public async Task<IActionResult> DeleteLocation(int id)
         {
             await _repository.DeleteLocation(id);

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
-    [Route("[controller]/[action]")]
+    [Route("api/[controller]")]
     [ApiController]
     public class SessionController : ControllerBase
     {
@@ -19,7 +19,7 @@ namespace CateringApi.Controllers
             _repository = repository;
         }
 
-        [HttpGet]
+        [HttpGet("GetAllSession")]
         public async Task<IActionResult> GetAllSession()
         {
             var list = await _repository.GetAllSession();
@@ -31,7 +31,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpGet]
+        [HttpGet("GetSessionById")]
         public async Task<IActionResult> GetSessionById(int id)
         {
             var licenseObj = await _repository.GetSessionById(id);
@@ -41,7 +41,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpPost]
+        [HttpPost("CreateSession")]
         public async Task<ActionResult> CreateSession(SessionDTO SessionDTO)
         {
 
@@ -51,7 +51,7 @@ namespace CateringApi.Controllers
 
         }
 
-        [HttpPut]
+        [HttpPut("UpdateSession")]
         public async Task<IActionResult> UpdateSession(SessionDTO SessionDTO)
         {
             await _repository.UpdateSession(SessionDTO);
@@ -61,7 +61,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpDelete]
+        [HttpDelete("DeleteSession")]
         public async Task<IActionResult> DeleteSession(int id)
         {
             await _repository.DeleteSession(id);
