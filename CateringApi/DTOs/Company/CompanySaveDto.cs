@@ -28,6 +28,28 @@
         public TimeSpan FromTime { get; set; }
         public TimeSpan ToTime { get; set; }
     }
+    public class CompanySessionMapping
+    {
+        public int Id { get; set; }
+        public int CompanyId { get; set; }
+        public int SessionId { get; set; }
+        public TimeSpan FromTime { get; set; }
+        public TimeSpan ToTime { get; set; }
+        public bool IsActive { get; set; }
+        public int? CreatedBy { get; set; }
+        public DateTime? CreatedDate { get; set; }
+        public int? UpdatedBy { get; set; }
+        public DateTime? UpdatedDate { get; set; }
+    }
+    public class CompanySessionMappingDto
+    {
+        public int CompanyId { get; set; }
+        public int SessionId { get; set; }
+        public string? SessionName { get; set; }
+        public TimeSpan FromTime { get; set; }
+        public TimeSpan ToTime { get; set; }
+        public bool IsActive { get; set; }
+    }
     public class CompanyDetailDto
     {
         public int Id { get; set; }

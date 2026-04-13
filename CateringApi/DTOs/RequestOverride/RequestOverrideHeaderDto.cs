@@ -34,7 +34,21 @@
         public bool IsCancelled { get; set; }
         public bool IsActive { get; set; }
     }
+    public class RequestOverrideDetail
+    {
+        public int Id { get; set; }
+        public int RequestOverrideId { get; set; }
+        public int SessionId { get; set; }
+        public int OverrideQty { get; set; }
+        public bool IsActive { get; set; }
+        public bool IsCancelled { get; set; }
+        public int? CreatedBy { get; set; }
+        public DateTime? CreatedDate { get; set; }
+        public int? UpdatedBy { get; set; }
+        public DateTime? UpdatedDate { get; set; }
 
+        public RequestOverride RequestOverride { get; set; }
+    }
     public class SaveRequestOverrideDto
     {
         public int RequestHeaderId { get; set; }
