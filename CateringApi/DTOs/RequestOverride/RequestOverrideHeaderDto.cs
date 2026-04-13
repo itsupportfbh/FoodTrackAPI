@@ -23,7 +23,7 @@
         public int Id { get; set; }
         public int RequestOverrideId { get; set; }
         public int RequestDetailId { get; set; }
-        public int? SessionId { get; set; }
+        public int SessionId { get; set; }
         public string SessionName { get; set; }
         public int? CuisineId { get; set; }
         public string CuisineName { get; set; }

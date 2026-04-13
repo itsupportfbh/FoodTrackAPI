@@ -9,12 +9,17 @@ namespace CateringApi.DTOs.Dashboard
         public int TotalCompanies { get; set; }
         public int TotalOrders { get; set; }
         public int TotalQRCodes { get; set; }
+
         public int TodayScans { get; set; }
         public int YesterdayScans { get; set; }
 
-        public decimal TotalOrderedQty { get; set; }
-        public decimal TotalRedeemedQty { get; set; }
-        public decimal TotalPendingQty { get; set; }
+        public decimal TodayOrderedQty { get; set; }
+        public decimal TodayRedeemedQty { get; set; }
+        public decimal TodayPendingQty { get; set; }
+
+        public decimal MonthOrderedQty { get; set; }
+        public decimal MonthRedeemedQty { get; set; }
+        public decimal MonthPendingQty { get; set; }
 
         public List<SessionOrderDTO> TotalOrdersBySession { get; set; } = new();
         public List<CompanyOrderDTO> TotalcompanyWiseOrders { get; set; } = new();
