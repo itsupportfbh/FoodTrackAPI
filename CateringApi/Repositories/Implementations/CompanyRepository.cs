@@ -296,7 +296,7 @@ VALUES
                     {
                         CompanyId = companyId,
                         RoleId = adminRoleId.Value,
-                        Username = dto.Email,
+                        Username = dto.ContactPerson,
                         Email = dto.Email,
                         PasswordHash = passwordHash,
                         CreatedBy = dto.UserId
