@@ -10,5 +10,6 @@ namespace CateringApi.Repositories.Interfaces
         Task<List<RequestOverrideListDto>> GetOverrideList(int companyId);
         Task<List<RequestOverrideLineDto>> GetOverrideLines(int requestOverrideId);
         Task DeleteAsync(int id, int updatedBy);
+
     }
 }

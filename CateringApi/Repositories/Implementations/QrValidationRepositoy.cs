@@ -53,115 +53,231 @@ namespace CateringApi.Repositories.Implementations
             await _context.SaveChangesAsync();
         }
 
-        public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode)
+        private static TimeSpan TrimToMinute(TimeSpan value)
         {
+            return new TimeSpan(value.Hours, value.Minutes, 0);
+        }
 
+        private static bool IsWithinSession(TimeSpan now, TimeSpan from, TimeSpan to)
+        {
+            // Normal session: 08:00 to 10:00
+            if (from <= to)
+                return now >= from && now <= to;
+
+            // Overnight session: 23:00 to 02:00
+            return now >= from || now <= to;
+        }
+
+        private async Task AddScanLogAsync(
+            int qrImageId,
+            int qrCodeRequestId,
+            int requestId,
+            int sessionId,
+            string uniqueCode,
+            bool isAllowed,
+            string message,
+            int? createdBy = null)
+        {
+            var log = new QrScanLog
+            {
+                QrImageId = qrImageId,
+                QrCodeRequestId = qrCodeRequestId,
+                RequestId = requestId,
+                SessionId = sessionId,
+                ScanDate = DateTime.Today,
+                ScanDateTime = DateTime.Now,
+                UniqueCode = uniqueCode,
+                IsAllowed = isAllowed,
+                Message = message,
+                CreatedDate = DateTime.Now,
+                CreatedBy = createdBy
+            };
+
+            _context.QrScanLog.Add(log);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task<QrValidationResult> ValidateScanAsync(string uniqueCode)
+        {
             var now = DateTime.Now;
+            var today = now.Date;
+            var nowTime = new TimeSpan(now.Hour, now.Minute, 0);
 
-            var qrImage = GetQrImageByUniqueCode(UniqueCode);
+            if (string.IsNullOrWhiteSpace(uniqueCode))
+                return Fail("QR code is required.");
 
-            if (qrImage == null || qrImage.Id == 0)
+            var qrImage = await _context.QrImage
+                .FirstOrDefaultAsync(x => x.UniqueCode == uniqueCode && x.IsActive);
+
+            if (qrImage == null)
                 return Fail("Invalid QR code.");
 
             var qrCodeRequest = await _context.QrCodeRequest
-                                     .AsNoTracking()
-                                     .FirstOrDefaultAsync(q =>
-                                                          q.Id == qrImage.Qrcoderequestid);
+                .FirstOrDefaultAsync(x => x.Id == qrImage.Qrcoderequestid && x.IsActive);
 
-            if (qrCodeRequest == null || qrCodeRequest.RequestId == 0)
-                return Fail("Invalid QR code.");
-
-            var request = await GetQrRequestByIdAsync(qrCodeRequest.RequestId);
-
-            if (request == null)
+            if (qrCodeRequest == null)
                 return Fail("QR request not found.");
 
+            // IMPORTANT:
+            // Historical OverrideId check panna koodadhu.
+            // QR batch own validity dhaan source of truth.
+            if (today < qrCodeRequest.QRValidFrom.Date)
+                return Fail($"QR is not yet valid. Valid from {qrCodeRequest.QRValidFrom:dd-MM-yyyy}.");
 
-            // 1. Check request date range
-            if (now < request.FromDate)
-                return Fail($"QR is not yet valid. Valid from {request.FromDate:dd-MM-yyyy}.");
-
-            if (now > request.ToDate)
-            {
-                await DeactivateRequestAndImagesAsync(qrImage.Qrcoderequestid, UniqueCode);
+            if (today > qrCodeRequest.QRValidTill.Date)
                 return Fail("QR validity period has ended. Access denied.");
-            }
 
-            // 2. Check if this specific QR is still active
-            if (!qrImage.IsActive)
-                return Fail("This QR code is no longer active.");
+            var requestHeader = await _context.RequestHeader
+                .FirstOrDefaultAsync(x => x.Id == qrCodeRequest.RequestId && x.IsActive);
 
-            // 3. Check session time window for this request
-            var sessionList = await (from ss in _context.Session
-                                     join rd in _context.RequestDetail on ss.Id equals rd.SessionId
-                                     where rd.RequestHeaderId == qrCodeRequest.RequestId && ss.IsActive && rd.IsActive
-                                     select new
-                                     {
-                                         ss.Id,
-                                         ss.SessionName,
-                                         ss.FromTime,
-                                         ss.ToTime
-                                     }).ToListAsync();
+            if (requestHeader == null)
+                return Fail("Request not found.");
 
-            // Determine which sessions currently apply (compare only hours and minutes, ignore seconds)
-            var nowTime = now.TimeOfDay;
-            var nowTimeTrimmed = new TimeSpan(nowTime.Hours, nowTime.Minutes, 0);
+            // Find today's matching session from request details
+            var sessionList = await (
+                from ss in _context.Session
+                join rd in _context.RequestDetail on ss.Id equals rd.SessionId
+                where rd.RequestHeaderId == qrCodeRequest.RequestId
+                      && ss.IsActive
+                      && rd.IsActive
+                select new
+                {
+                    ss.Id,
+                    ss.SessionName,
+                    ss.FromTime,
+                    ss.ToTime
+                }
+            )
+            .Distinct()
+            .ToListAsync();
 
-            var matchingSessions = sessionList.Where(s => s.FromTime.HasValue && s.ToTime.HasValue &&
-            (
-                // normal range: From <= To
-                (new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0) <= new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0)
-                    && nowTimeTrimmed >= new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0)
-                    && nowTimeTrimmed <= new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0))
-                // overnight range: From > To (e.g., 23:00 - 02:00)
-                || (new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0) > new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0)
-                    && (nowTimeTrimmed >= new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0)
-                        || nowTimeTrimmed <= new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0))))
-            ).ToList();
+            var matchingSession = sessionList
+                .Where(s => s.FromTime.HasValue && s.ToTime.HasValue)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.SessionName,
+                    From = new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0),
+                    To = new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0)
+                })
+                .FirstOrDefault(s =>
+                    // normal session
+                    (s.From <= s.To && nowTime >= s.From && nowTime <= s.To)
+                    ||
+                    // overnight session
+                    (s.From > s.To && (nowTime >= s.From || nowTime <= s.To))
+                );
 
-            if (!matchingSessions.Any())
+            if (matchingSession == null)
                 return Fail("Scanning not allowed at this time for the request's session.");
 
-            // If scanning is within a session window, ensure this QR hasn't already been used for the same session
-            if (qrImage.IsUsed && qrImage.UsedDate.HasValue)
+            // SAME QR + SAME DAY + SAME SESSION => deny
+            var alreadyScannedThisSession = await _context.QrScanLog.AnyAsync(x =>
+                x.QrImageId == qrImage.Id &&
+                x.RequestId == qrCodeRequest.RequestId &&
+                x.SessionId == matchingSession.Id &&
+                x.ScanDate == today &&
+                x.IsAllowed);
+
+            if (alreadyScannedThisSession)
+                return Fail($"Meal already collected for {matchingSession.SessionName}.");
+
+            // Find current active override for TODAY
+            var activeOverride = await _context.RequestOverride
+                .Where(x =>
+                    x.RequestHeaderId == qrCodeRequest.RequestId &&
+                    x.IsActive &&
+                    x.FromDate.Date <= today &&
+                    x.ToDate.Date >= today)
+                .OrderByDescending(x => x.Id)
+                .FirstOrDefaultAsync();
+
+            int requiredQty = 0;
+
+            if (activeOverride != null)
             {
-                var usedTime = qrImage.UsedDate.Value.TimeOfDay;
-                var usedTimeTrimmed = new TimeSpan(usedTime.Hours, usedTime.Minutes, 0);
-
-                foreach (var s in matchingSessions)
-                {
-                    if (!s.FromTime.HasValue || !s.ToTime.HasValue)
-                        continue;
-
-                    var fromTrimmed = new TimeSpan(s.FromTime.Value.Hours, s.FromTime.Value.Minutes, 0);
-                    var toTrimmed = new TimeSpan(s.ToTime.Value.Hours, s.ToTime.Value.Minutes, 0);
-
-                    // normal range: From <= To
-                    if (fromTrimmed <= toTrimmed)
-                    {
-                        if (usedTimeTrimmed >= fromTrimmed && usedTimeTrimmed <= toTrimmed)
-                            return Fail("Meal already collected for this session.");
-                    }
-                    else
-                    {
-                        // overnight range: From > To (e.g., 23:00 - 02:00)
-                        if (usedTimeTrimmed >= fromTrimmed || usedTimeTrimmed <= toTrimmed)
-                            return Fail("Meal already collected for this session.");
-                    }
-                }
+                // Override session qty
+                requiredQty = await _context.RequestOverrideDetail
+                    .Where(x =>
+                        x.RequestOverrideId == activeOverride.Id &&
+                        x.SessionId == matchingSession.Id &&
+                        x.IsActive &&
+                        !x.IsCancelled)
+                    .SumAsync(x => (int?)x.OverrideQty) ?? 0;
+            }
+            else
+            {
+                // Base request session qty
+                requiredQty = await _context.RequestDetail
+                    .Where(x =>
+                        x.RequestHeaderId == qrCodeRequest.RequestId &&
+                        x.SessionId == matchingSession.Id &&
+                        x.IsActive)
+                    .SumAsync(x => (int?)x.Qty) ?? 0;
             }
 
-            // 4. All checks passed — mark as used
-            await MarkQrAsUsedAsync(qrImage.Id, now);
+            if (requiredQty <= 0)
+                return Fail($"No quantity configured for {matchingSession.SessionName}.");
+
+            // Today total successful scans for this request + session
+            int usedQtyToday = await _context.QrScanLog
+                .Where(x =>
+                    x.RequestId == qrCodeRequest.RequestId &&
+                    x.SessionId == matchingSession.Id &&
+                    x.ScanDate == today &&
+                    x.IsAllowed)
+                .CountAsync();
+
+            if (usedQtyToday >= requiredQty)
+                return Fail($"{matchingSession.SessionName} quantity limit reached for today.");
+
+            // Mark last-use info only
+            qrImage.IsUsed = true;
+            qrImage.UsedDate = now;
+            qrImage.QRScannedCount = (qrImage.QRScannedCount ?? 0) + 1;
+
+            await _context.SaveChangesAsync();
+
+            // Insert scan log
+            var log = new QrScanLog
+            {
+                QrImageId = qrImage.Id,
+                QrCodeRequestId = qrCodeRequest.Id,
+                RequestId = qrCodeRequest.RequestId,
+                SessionId = matchingSession.Id,
+                ScanDate = today,
+                ScanDateTime = now,
+                UniqueCode = uniqueCode,
+                IsAllowed = true,
+                Message = "Access granted",
+                CreatedDate = now,
+                CreatedBy = null
+            };
+
+            _context.QrScanLog.Add(log);
+            await _context.SaveChangesAsync();
 
             return new QrValidationResult
             {
                 IsAllowed = true,
-                Message = "Access granted. Enjoy your meal!"
+                Message = $"Access granted for {matchingSession.SessionName}. Enjoy your meal!",
+                SessionId = matchingSession.Id,
+                SessionName = matchingSession.SessionName,
+                ScanTime = now
             };
         }
 
-        private static QrValidationResult Fail(string message) =>
-            new QrValidationResult { IsAllowed = false, Message = message };
+        private static QrValidationResult Fail(string message)
+        {
+            return new QrValidationResult
+            {
+                IsAllowed = false,
+                Message = message
+            };
+        }
+
+       
+
+       
     }
 }

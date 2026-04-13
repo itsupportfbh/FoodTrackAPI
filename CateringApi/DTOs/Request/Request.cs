@@ -2,7 +2,7 @@
 {
     public class RequestHeader
     {
-        public int? Id { get; set; }
+        public int Id { get; set; }
         public string? RequestNo { get; set; }
 
         public int CompanyId { get; set; }

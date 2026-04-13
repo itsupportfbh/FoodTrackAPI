@@ -27,6 +27,9 @@ namespace CateringApi.Data
         public DbSet<Session> Session { get; set; }
         public DbSet<QrImage> QrImage { get; set; }
         public DbSet<RequestOverride> RequestOverride { get; set; }
+       
+        public DbSet<RequestOverrideLineDto> RequestOverrideDetail { get; set; }    
+        public DbSet<QrScanLog> QrScanLog { get; set; }
 
     }
 }

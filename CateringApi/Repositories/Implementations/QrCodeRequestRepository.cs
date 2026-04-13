@@ -326,67 +326,67 @@ namespace CateringApi.Repositories.Implementations
             return result;
         }
 
-        public async Task<List<RequestDropdownDto>> GetRequestIdDropdown()
-        {
-            var requestItems = await (
-                from r in _context.RequestHeader
-                join c in _context.CompanyMaster on r.CompanyId equals c.Id
-                where r.IsActive
-                      && !_context.QrCodeRequest.Any(q =>
-                            q.IsActive &&
-                            q.RequestId == r.Id &&
-                            q.CompanyId == r.CompanyId &&
-                            q.OverrideId == 0)
-                select new RequestDropdownDto
-                {
-                    RequestId = Convert.ToInt32(r.Id),
-                    OverrideId = 0,
-                    RequestNo = r.RequestNo,
-                    CompanyId = r.CompanyId,
-                    CompanyName = c.CompanyName,
-                    CompanyEmail = c.Email,
-                    Qty = Convert.ToInt32(r.TotalQty),
-                    FromDate = r.FromDate,
-                    TillDate = r.ToDate,
-                    SourceType = "REQUEST",
-                    DisplayText = r.RequestNo + " - " + c.CompanyName 
-                }
-            ).ToListAsync();
+        //public async Task<List<RequestDropdownDto>> GetRequestIdDropdown()
+        //{
+        //    var requestItems = await (
+        //        from r in _context.RequestHeader
+        //        join c in _context.CompanyMaster on r.CompanyId equals c.Id
+        //        where r.IsActive
+        //              && !_context.QrCodeRequest.Any(q =>
+        //                    q.IsActive &&
+        //                    q.RequestId == r.Id &&
+        //                    q.CompanyId == r.CompanyId &&
+        //                    q.OverrideId == 0)
+        //        select new RequestDropdownDto
+        //        {
+        //            RequestId = Convert.ToInt32(r.Id),
+        //            OverrideId = 0,
+        //            RequestNo = r.RequestNo,
+        //            CompanyId = r.CompanyId,
+        //            CompanyName = c.CompanyName,
+        //            CompanyEmail = c.Email,
+        //            Qty = Convert.ToInt32(r.TotalQty),
+        //            FromDate = r.FromDate,
+        //            TillDate = r.ToDate,
+        //            SourceType = "REQUEST",
+        //            DisplayText = r.RequestNo + " - " + c.CompanyName 
+        //        }
+        //    ).ToListAsync();
 
-            var overrideItems = await (
-                from o in _context.RequestOverride
-                join r in _context.RequestHeader on o.RequestHeaderId equals r.Id
-                join c in _context.CompanyMaster on r.CompanyId equals c.Id
-                where o.IsActive
-                      && r.IsActive
-                      && !_context.QrCodeRequest.Any(q =>
-                            q.IsActive &&
-                            q.RequestId == r.Id &&
-                            q.CompanyId == r.CompanyId &&
-                            q.OverrideId == o.Id)
-                select new RequestDropdownDto
-                {
-                    RequestId = Convert.ToInt32(r.Id),
-                    OverrideId = Convert.ToInt32(o.Id),
-                    RequestNo = r.RequestNo,
-                    CompanyId = r.CompanyId,
-                    CompanyName = c.CompanyName,
-                    CompanyEmail = c.Email,
-                    Qty = Convert.ToInt32(o.DifferentQty),
-                    FromDate = o.FromDate,
-                    TillDate = o.ToDate,
-                    SourceType = "OVERRIDE",
-                    DisplayText = r.RequestNo + " - " + c.CompanyName + " - Override #" + o.Id
-                }
-            ).ToListAsync();
+        //    var overrideItems = await (
+        //        from o in _context.RequestOverride
+        //        join r in _context.RequestHeader on o.RequestHeaderId equals r.Id
+        //        join c in _context.CompanyMaster on r.CompanyId equals c.Id
+        //        where o.IsActive
+        //              && r.IsActive
+        //              && !_context.QrCodeRequest.Any(q =>
+        //                    q.IsActive &&
+        //                    q.RequestId == r.Id &&
+        //                    q.CompanyId == r.CompanyId &&
+        //                    q.OverrideId == o.Id)
+        //        select new RequestDropdownDto
+        //        {
+        //            RequestId = Convert.ToInt32(r.Id),
+        //            OverrideId = Convert.ToInt32(o.Id),
+        //            RequestNo = r.RequestNo,
+        //            CompanyId = r.CompanyId,
+        //            CompanyName = c.CompanyName,
+        //            CompanyEmail = c.Email,
+        //            Qty = Convert.ToInt32(o.DifferentQty),
+        //            FromDate = o.FromDate,
+        //            TillDate = o.ToDate,
+        //            SourceType = "OVERRIDE",
+        //            DisplayText = r.RequestNo + " - " + c.CompanyName + " - Override #" + o.Id
+        //        }
+        //    ).ToListAsync();
 
-            return requestItems
-                .Concat(overrideItems)
-                .OrderBy(x => x.RequestNo)
-                .ThenBy(x => x.SourceType)
-                .ThenBy(x => x.OverrideId)
-                .ToList();
-        }
+        //    return requestItems
+        //        .Concat(overrideItems)
+        //        .OrderBy(x => x.RequestNo)
+        //        .ThenBy(x => x.SourceType)
+        //        .ThenBy(x => x.OverrideId)
+        //        .ToList();
+        //}
                       
 
         public async Task<QrCodeRequestModel> DeleteQrCode(int id, int userId)
@@ -522,85 +522,89 @@ namespace CateringApi.Repositories.Implementations
             finalBitmap.Save(outputMs, ImageFormat.Png);
             return outputMs.ToArray();
         }
-             
+
 
         public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
         {
             var result = new List<QrResultDto>();
 
-            if (model == null ||
-                model.RequestId <= 0 ||
-                model.CompanyId <= 0 ||
-                string.IsNullOrWhiteSpace(model.CompanyName) ||
-                model.NoofQR <= 0)
-            {
-                return result;
-            }
+            if (model == null)
+                throw new Exception("Request payload is required.");
+
+            if (model.RequestId <= 0)
+                throw new Exception("Valid RequestId is required.");
+
+            if (model.CompanyId <= 0)
+                throw new Exception("Valid CompanyId is required.");
+
+            if (string.IsNullOrWhiteSpace(model.CompanyName))
+                throw new Exception("CompanyName is required.");
+
+            if (model.NoofQR <= 0)
+                throw new Exception("NoofQR must be greater than 0.");
+
+            DateTime validFrom = model.QRValidFrom.Date;
+            DateTime validTill = model.QRValidTill.Date;
+
+            if (validFrom > validTill)
+                throw new Exception("QRValidFrom cannot be greater than QRValidTill.");
 
             var requestHeader = await _context.RequestHeader
                 .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive);
 
             if (requestHeader == null)
-            {
-                return result;
-            }
+                throw new Exception("Request not found.");
 
-            DateTime validFrom;
-            DateTime validTill;
+            var pendingItems = await GetQrPendingDropdown();
 
-            if (model.OverrideId.HasValue && model.OverrideId.Value > 0)
-            {
-                var overrideData = await _context.RequestOverride
-                    .FirstOrDefaultAsync(x =>
-                        x.Id == model.OverrideId.Value &&
-                        x.RequestHeaderId == model.RequestId &&
-                        x.IsActive);
+            var matchedPending = pendingItems.FirstOrDefault(x =>
+                x.RequestId == model.RequestId &&
+                (x.OverrideId ?? 0) == (model.OverrideId ?? 0) &&
+                x.FromDate.Date == validFrom &&
+                x.TillDate.Date == validTill);
 
-                if (overrideData == null)
-                {
-                    throw new Exception("Override record not found.");
-                }
+            if (matchedPending == null)
+                throw new Exception("Selected pending segment is not available. Please refresh and try again.");
 
-                validFrom = overrideData.FromDate;
-                validTill = overrideData.ToDate;
-            }
-            else
-            {
-                validFrom = requestHeader.FromDate;
-                validTill = requestHeader.ToDate;
-            }
+            if (model.NoofQR > matchedPending.Qty)
+                throw new Exception($"Only {matchedPending.Qty} QR(s) can be generated for this segment.");
 
-            int totalQty = Convert.ToInt32(model.NoofQR);
+            int totalQty = model.NoofQR;
 
-            string safeCompanyName = new string(model.CompanyName
+            string safeCompanyName = new string((model.CompanyName ?? string.Empty)
                 .Where(char.IsLetterOrDigit)
                 .ToArray())
                 .ToUpper();
 
-            string fromMonth = validFrom.ToString("MMM").ToUpper();
-            string tillMonth = validTill.ToString("MMM").ToUpper();
-
-            string monthPart = fromMonth == tillMonth
-                ? fromMonth
-                : $"{fromMonth}-{tillMonth}";
-
             string requestPart = $"RQ{model.RequestId}";
-            string overridePart = model.OverrideId.HasValue && model.OverrideId.Value > 0
-                ? $"OVR{model.OverrideId.Value}_"
+            string overridePart = (model.OverrideId ?? 0) > 0
+                ? $"OVR{model.OverrideId.Value}"
                 : "";
 
+            string datePart = $"{validFrom:ddMMyyyy}{validTill:ddMMyyyy}";
             string logoPath = Path.Combine(_env.WebRootPath, "Images", "CSPL Logo.png");
+
+            int alreadyGeneratedCount = await (
+                from qi in _context.QrImage
+                join qr in _context.QrCodeRequest on qi.Qrcoderequestid equals qr.Id
+                where qi.IsActive
+                      && qr.IsActive
+                      && qr.RequestId == model.RequestId
+                      && (qr.OverrideId ?? 0) == (model.OverrideId ?? 0)
+                      && qr.QRValidFrom.Date == validFrom
+                      && qr.QRValidTill.Date == validTill
+                select qi.Id
+            ).CountAsync();
 
             using var qrGenerator = new QRCodeGenerator();
 
             for (int i = 1; i <= totalQty; i++)
             {
-                // Original:
-                // CSPLCOMPANYAPRRQ12_001
-                //
-                // Override:
-                // CSPLCOMPANYAPR-MAYRQ12OVR3_001
-                string uniqueCode = $"CSPL{safeCompanyName}{monthPart}{requestPart}{overridePart}{i:000}";
+                int runningSerial = alreadyGeneratedCount + i;
+
+                string uniqueCode = !string.IsNullOrWhiteSpace(overridePart)
+                    ? $"CSPL{safeCompanyName}{requestPart}{overridePart}{datePart}_{runningSerial:000}"
+                    : $"CSPL{safeCompanyName}{requestPart}{datePart}_{runningSerial:000}";
 
                 string qrText = uniqueCode;
 
@@ -616,7 +620,7 @@ namespace CateringApi.Repositories.Implementations
                     ImageBytes = finalQrBytes,
                     ImageBase64 = Convert.ToBase64String(finalQrBytes),
                     UniqueCode = uniqueCode,
-                    SerialNo = i,
+                    SerialNo = runningSerial,
                     UsedDate = null,
                     IsUsed = false
                 });
@@ -958,36 +962,181 @@ namespace CateringApi.Repositories.Implementations
                 throw new Exception("Email sending failed: " + ex.Message);
             }
         }
+        private static int NormalizeOverrideId(int? overrideId)
+        {
+            return overrideId.HasValue && overrideId.Value > 0 ? overrideId.Value : 0;
+        }
+
+        private static bool IsWithinRange(DateTime targetFrom, DateTime targetTill, DateTime rangeFrom, DateTime rangeTill)
+        {
+            return rangeFrom.Date <= targetFrom.Date && rangeTill.Date >= targetTill.Date;
+        }
+        public async Task<List<RequestDropdownDto>> GetQrPendingDropdown()
+        {
+            var result = new List<RequestDropdownDto>();
+
+            var requests = await (
+                from r in _context.RequestHeader
+                join c in _context.CompanyMaster on r.CompanyId equals c.Id
+                where r.IsActive
+                select new
+                {
+                    RequestId = r.Id,
+                    RequestNo = r.RequestNo,
+                    CompanyId = c.Id,
+                    CompanyName = c.CompanyName,
+                    CompanyEmail = c.Email,
+                    BaseFromDate = r.FromDate,
+                    BaseToDate = r.ToDate,
+                    BaseQty = (int?)r.TotalQty
+                }
+            ).ToListAsync();
+
+            foreach (var req in requests)
+            {
+                DateTime reqFrom = req.BaseFromDate.Date;
+                DateTime reqTo = req.BaseToDate.Date;
+                int baseQty = req.BaseQty ?? 0;
+
+                var overrides = await _context.RequestOverride
+                    .Where(x => x.RequestHeaderId == req.RequestId && x.IsActive)
+                    .OrderBy(x => x.FromDate)
+                    .ThenBy(x => x.Id)
+                    .Select(x => new
+                    {
+                        x.Id,
+                        x.FromDate,
+                        x.ToDate,
+                        TotalQty = (int?)x.TotalQty
+                    })
+                    .ToListAsync();
+
+                var qrBatches = await _context.QrCodeRequest
+                    .Where(x => x.RequestId == req.RequestId && x.IsActive)
+                    .Select(x => new
+                    {
+                        x.Id,
+                        x.RequestId,
+                        OverrideId = (int?)x.OverrideId,
+                        x.QRValidFrom,
+                        x.QRValidTill,
+                        NoofQR = (int?)x.NoofQR
+                    })
+                    .ToListAsync();
+
+                var boundaries = new List<DateTime>
+        {
+            reqFrom,
+            reqTo.AddDays(1)
+        };
+
+                // Override boundaries
+                foreach (var ov in overrides)
+                {
+                    boundaries.Add(ov.FromDate.Date);
+                    boundaries.Add(ov.ToDate.Date.AddDays(1));
+                }
+
+                // QR boundaries ALSO needed for partial segment split
+                foreach (var qr in qrBatches)
+                {
+                    boundaries.Add(qr.QRValidFrom.Date);
+                    boundaries.Add(qr.QRValidTill.Date.AddDays(1));
+                }
+
+                boundaries = boundaries
+                    .Distinct()
+                    .OrderBy(x => x)
+                    .ToList();
+
+                for (int i = 0; i < boundaries.Count - 1; i++)
+                {
+                    DateTime segFrom = boundaries[i].Date;
+                    DateTime segTill = boundaries[i + 1].Date.AddDays(-1);
+
+                    if (segFrom > segTill)
+                        continue;
+
+                    if (segFrom < reqFrom || segTill > reqTo)
+                        continue;
+
+                    var appliedOverride = overrides
+                        .Where(x => x.FromDate.Date <= segFrom && x.ToDate.Date >= segTill)
+                        .OrderByDescending(x => x.Id)
+                        .FirstOrDefault();
+
+                    int effectiveOverrideId = appliedOverride?.Id ?? 0;
+
+                    int requiredQty = appliedOverride != null
+                        ? (appliedOverride.TotalQty ?? 0)
+                        : baseQty;
+
+                    // Any generated QR batch that fully covers THIS SMALL segment
+                    int generatedQty = qrBatches
+                        .Where(x =>
+                            x.QRValidFrom.Date <= segFrom &&
+                            x.QRValidTill.Date >= segTill)
+                        .Sum(x => x.NoofQR ?? 0);
+
+                    int pendingQty = requiredQty - generatedQty;
+
+                    if (pendingQty <= 0)
+                        continue;
+
+                    result.Add(new RequestDropdownDto
+                    {
+                        RequestId = req.RequestId,
+                        OverrideId = effectiveOverrideId == 0 ? null : effectiveOverrideId,
+                        RequestNo = req.RequestNo,
+                        CompanyId = req.CompanyId,
+                        CompanyName = req.CompanyName,
+                        CompanyEmail = req.CompanyEmail,
+                        Qty = pendingQty,
+                        FromDate = segFrom,
+                        TillDate = segTill,
+                        SourceType = effectiveOverrideId > 0 ? "OVERRIDE_PENDING" : "REQUEST_PENDING",
+                        DisplayText = effectiveOverrideId > 0
+                            ? $"{req.RequestNo} - {req.CompanyName} - Override #{effectiveOverrideId} - {segFrom:dd-MM-yyyy} to {segTill:dd-MM-yyyy} - Qty {pendingQty}"
+                            : $"{req.RequestNo} - {req.CompanyName} - {segFrom:dd-MM-yyyy} to {segTill:dd-MM-yyyy} - Qty {pendingQty}"
+                    });
+                }
+            }
+
+            return result
+                .OrderBy(x => x.RequestNo)
+                .ThenBy(x => x.FromDate)
+                .ThenBy(x => x.TillDate)
+                .ThenBy(x => x.OverrideId)
+                .ToList();
+        }
         public async Task<QrCodeRequestModel> AddUpdateQrWithImagesAsync(QrCodeRequestModel model)
         {
             if (model == null)
                 throw new ArgumentNullException(nameof(model));
 
-            // --------------------------
-            // Validate required fields
-            // --------------------------
-
             if (model.CompanyId <= 0)
                 throw new Exception("CompanyId must be greater than 0.");
+
             if (string.IsNullOrWhiteSpace(model.CompanyName))
                 throw new Exception("CompanyName is required.");
 
-           
+            if (model.RequestId <= 0)
+                throw new Exception("RequestId must be greater than 0.");
 
-            // Auto-generate RequestId if missing
-           
+            if (model.NoofQR <= 0)
+                throw new Exception("NoofQR must be greater than 0.");
+
+            if (model.QRValidFrom == default)
+                throw new Exception("QRValidFrom is required.");
+
+            if (model.QRValidTill == default)
+                throw new Exception("QRValidTill is required.");
+
+            if (model.QRValidFrom.Date > model.QRValidTill.Date)
+                throw new Exception("QRValidFrom cannot be greater than QRValidTill.");
 
             if (model.QrImages == null || !model.QrImages.Any())
                 throw new Exception("At least one QR image is required.");
-
-            // --------------------------
-            // Set QRValidTill to end of month
-            // --------------------------
-            //model.QRValidTill = new DateTime(
-            //    model.QRValidFrom.Year,
-            //    model.QRValidFrom.Month,
-            //    DateTime.DaysInMonth(model.QRValidFrom.Year, model.QRValidFrom.Month)
-            //);
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -995,82 +1144,90 @@ namespace CateringApi.Repositories.Implementations
             {
                 QrCodeRequest qrRequest;
 
-                // --------------------------
-                // Insert or update main QR request
-                // --------------------------
+                int? safeOverrideId = (model.OverrideId.HasValue && model.OverrideId.Value > 0)
+                    ? model.OverrideId.Value
+                    : null;
+
                 if (model.Id > 0)
                 {
-                    // Update existing request
                     qrRequest = await _context.QrCodeRequest
-                        .FirstOrDefaultAsync(x => x.Id == model.Id)
+                        .FirstOrDefaultAsync(x => x.Id == model.Id && x.IsActive)
                         ?? throw new Exception("QR request not found.");
 
                     qrRequest.CompanyId = model.CompanyId;
-                    qrRequest.CompanyName = model.CompanyName;
-                    qrRequest.CompanyEmail = string.IsNullOrWhiteSpace(model.CompanyEmail) ? null : model.CompanyEmail;
+                    qrRequest.CompanyName = model.CompanyName.Trim();
+                    qrRequest.CompanyEmail = string.IsNullOrWhiteSpace(model.CompanyEmail)
+                        ? null
+                        : model.CompanyEmail.Trim();
+                    qrRequest.RequestId = model.RequestId;
+                    qrRequest.OverrideId = safeOverrideId;
                     qrRequest.NoofQR = model.NoofQR;
                     qrRequest.QRValidFrom = model.QRValidFrom;
                     qrRequest.QRValidTill = model.QRValidTill;
                     qrRequest.IsActive = model.IsActive;
                     qrRequest.UpdatedDate = DateTime.UtcNow;
-                    qrRequest.UpdatedBy = model.UpdatedBy;
-                    qrRequest.RequestId = model.RequestId;
-                    qrRequest.OverrideId = model.OverrideId;
-
+                    qrRequest.UpdatedBy = model.UpdatedBy > 0 ? model.UpdatedBy : model.CreatedBy;
 
                     _context.QrCodeRequest.Update(qrRequest);
+
+                    var oldImages = await _context.QrImage
+                        .Where(x => x.Qrcoderequestid == qrRequest.Id && x.IsActive)
+                        .ToListAsync();
+
+                    foreach (var old in oldImages)
+                    {
+                        old.IsActive = false;
+                        old.UpdatedDate = DateTime.UtcNow;
+                        old.UpdatedBy = (model.UpdatedBy > 0 ? model.UpdatedBy : model.CreatedBy).ToString();
+                    }
                 }
                 else
                 {
-                    // New request
                     qrRequest = new QrCodeRequest
                     {
                         CompanyId = model.CompanyId,
-                        CompanyName = model.CompanyName,
-                        CompanyEmail = string.IsNullOrWhiteSpace(model.CompanyEmail) ? null : model.CompanyEmail,
+                        CompanyName = model.CompanyName.Trim(),
+                        CompanyEmail = string.IsNullOrWhiteSpace(model.CompanyEmail)
+                            ? null
+                            : model.CompanyEmail.Trim(),
                         RequestId = model.RequestId,
-                        OverrideId=model.OverrideId,
+                        OverrideId = safeOverrideId,
                         NoofQR = model.NoofQR,
                         QRValidFrom = model.QRValidFrom,
                         QRValidTill = model.QRValidTill,
                         IsActive = model.IsActive,
                         CreatedDate = DateTime.UtcNow,
-                        CreatedBy = model.CreatedBy
-
+                        CreatedBy = model.CreatedBy,
+                        UpdatedDate = null,
+                        UpdatedBy = 0
                     };
 
                     _context.QrCodeRequest.Add(qrRequest);
                 }
 
-                await _context.SaveChangesAsync(); // Save main request to get ID
+                await _context.SaveChangesAsync();
 
-                //// --------------------------
-                //// Remove old QR images if updating
-                //// --------------------------
-                //if (model.Id > 0)
-                //{
-                //    var existingImages = _context.QrImage
-                //        .Where(x => x.Qrcoderequestid == qrRequest.Id);
-
-                //    _context.QrImage.RemoveRange(existingImages);
-                //    await _context.SaveChangesAsync();
-                //}
-
-                // --------------------------
-                // Insert new QR images
-                // --------------------------
                 foreach (var qr in model.QrImages)
                 {
                     if (string.IsNullOrWhiteSpace(qr.QrCodeImageBase64))
                         throw new Exception("QR image Base64 is required for each QR.");
 
+                    byte[] imageBytes;
+                    try
+                    {
+                        imageBytes = Convert.FromBase64String(qr.QrCodeImageBase64);
+                    }
+                    catch
+                    {
+                        throw new Exception("Invalid QR image Base64 format.");
+                    }
+
                     var qrImage = new QrImage
                     {
-
                         Qrcoderequestid = qrRequest.Id,
                         QrCodeText = qr.QrCodeText,
-                        QrCodeImage = Convert.FromBase64String(qr.QrCodeImageBase64), // store as bytes
-                        IsActive = qr.IsActive,
+                        QrCodeImage = imageBytes,
+                        IsActive = true,
                         SerialNo = qr.SerialNo,
                         UniqueCode = qr.UniqueCode,
                         IsUsed = false,
@@ -1078,19 +1235,18 @@ namespace CateringApi.Repositories.Implementations
                         CreatedDate = DateTime.UtcNow,
                         CreatedBy = model.CreatedBy.ToString(),
                         UpdatedDate = DateTime.UtcNow,
-                        UpdatedBy = model.UpdatedBy > 0 ? model.UpdatedBy.ToString() : model.CreatedBy.ToString()
+                        UpdatedBy = (model.UpdatedBy > 0 ? model.UpdatedBy : model.CreatedBy).ToString()
                     };
 
                     _context.QrImage.Add(qrImage);
                 }
 
-                await _context.SaveChangesAsync(); // Save QR images
+                await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                // --------------------------
-                // Map back ID to DTO
-                // --------------------------
                 model.Id = qrRequest.Id;
+                model.OverrideId = safeOverrideId;
+
                 return model;
             }
             catch

@@ -23,9 +23,9 @@ namespace CateringApi.Controllers
 
 
         [HttpGet("GetRequestIdDropdown")]
-        public Task<List<RequestDropdownDto>> GetRequestIdDropdown()
+        public Task<List<RequestDropdownDto>> GetQrPendingDropdown()
         {
-            return _qrCodeRequestRepository.GetRequestIdDropdown();
+            return _qrCodeRequestRepository.GetQrPendingDropdown();
         }
         [HttpGet("DownloadQrZip")]
         public async Task<IActionResult> DownloadQrZip(int qrcoderequestid)
@@ -90,7 +90,7 @@ namespace CateringApi.Controllers
         {
             return await _qrCodeRequestRepository.GenerateUniqueQrs(model);
         }
-        [HttpGet("ValidateScanAsync")]
+        [HttpGet("ValidateScan")]
         public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode)
         {
             return await _qrvalidationrepo.ValidateScanAsync(UniqueCode);

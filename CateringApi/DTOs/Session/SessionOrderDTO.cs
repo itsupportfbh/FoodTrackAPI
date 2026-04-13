@@ -2,7 +2,7 @@
 {
     public class SessionOrderDTO
     {
-        public string SessionName { get; set; }
+        public string SessionName { get; set; } = string.Empty;
         public decimal TotalQty { get; set; }
     }
 }

@@ -55,5 +55,25 @@
 
             public string? QrCodeImageBase64 { get; set; }
         }
+        public class QrPendingSegmentDto
+        {
+            public int RequestId { get; set; }
+            public int? OverrideId { get; set; }
+            public int CompanyId { get; set; }
+            public string CompanyName { get; set; }
+            public string CompanyEmail { get; set; }
+            public DateTime FromDate { get; set; }
+            public DateTime TillDate { get; set; }
+            public int RequiredQty { get; set; }
+            public int GeneratedQty { get; set; }
+            public int PendingQty { get; set; }
+            public string SourceType { get; set; }
+            public string DisplayText { get; set; }
+        }
+        public class SegmentRange
+        {
+            public DateTime FromDate { get; set; }
+            public DateTime TillDate { get; set; }
+        }
     }
 }
