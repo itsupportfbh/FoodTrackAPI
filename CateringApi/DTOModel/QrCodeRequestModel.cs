@@ -20,7 +20,16 @@
         public int CreatedBy { get; set; }
         public int UpdatedBy { get; set; }
 
-        public int? OverrideId { get; set; }   // <- change here
+        public int? OverrideId { get; set; }
+
+        public int ApprovalStatus { get; set; }
+        public int? RequestedBy { get; set; }
+        public DateTime? RequestedDate { get; set; }
+        public int? ApprovedBy { get; set; }
+        public DateTime? ApprovedDate { get; set; }
+        public int? RejectedBy { get; set; }
+        public DateTime? RejectedDate { get; set; }
+        public string? RejectionReason { get; set; }
 
         public string? QRImageBase64 { get; set; }
 

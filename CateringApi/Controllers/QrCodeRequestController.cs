@@ -111,5 +111,23 @@ namespace CateringApi.Controllers
                 data
             });
         }
+        [HttpPost("submit-qr-approval")]
+        public async Task<IActionResult> SubmitQrApproval([FromBody] QrCodeRequestModel model)
+        {
+            var result = await _qrCodeRequestRepository.SubmitQrApprovalRequestAsync(model);
+            return Ok(new { message = result });
+        }
+        [HttpPost("approve-qr-request/{id}")]
+        public async Task<IActionResult> ApproveQrRequest(int id, [FromBody] int approvedBy)
+        {
+            var result = await _qrCodeRequestRepository.ApproveQrRequestAsync(id, approvedBy);
+            return Ok(new { message = result });
+        }
+        [HttpPost("reject-qr-request/{id}")]
+        public async Task<IActionResult> RejectQrRequest(int id, [FromBody] RejectQrDto model)
+        {
+            var result = await _qrCodeRequestRepository.RejectQrRequestAsync(id, model.RejectedBy, model.Reason);
+            return Ok(new { message = result });
+        }
     }
 }

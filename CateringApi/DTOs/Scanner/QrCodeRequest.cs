@@ -9,26 +9,52 @@ namespace CateringApi.DTOs.Scanner
 
         public int CompanyId { get; set; }
 
-        public string CompanyName { get; set; } 
-        public string CompanyEmail { get; set; } 
-        public int RequestId { get; set; } 
+        public string CompanyName { get; set; }
+
+        public string CompanyEmail { get; set; }
+
+        public int RequestId { get; set; }
 
         public int NoofQR { get; set; }
+
         public DateTime QRValidFrom { get; set; }
 
         public DateTime QRValidTill { get; set; }
-       
+
         public bool IsActive { get; set; }
+
         public DateTime CreatedDate { get; set; }
+
         public DateTime? UpdatedDate { get; set; }
+
         public int CreatedBy { get; set; }
+
         public int UpdatedBy { get; set; }
+
         public int? OverrideId { get; set; }
 
+        // Approval Flow
+        public int ApprovalStatus { get; set; }   // 0 = Pending, 1 = Approved, 2 = Rejected
 
+        public int? RequestedBy { get; set; }
 
+        public DateTime? RequestedDate { get; set; }
+
+        public int? ApprovedBy { get; set; }
+
+        public DateTime? ApprovedDate { get; set; }
+
+        public int? RejectedBy { get; set; }
+
+        public DateTime? RejectedDate { get; set; }
+
+        public string? RejectionReason { get; set; }
     }
-
+    public class RejectQrDto
+    {
+        public int RejectedBy { get; set; }
+        public string Reason { get; set; }
+    }
     public class QrResultDto
     {
         public string Text { get; set; }

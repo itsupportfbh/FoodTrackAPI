@@ -22,6 +22,9 @@ namespace CateringApi.Repositories.Interfaces
         public Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model);
         Task<(byte[] ZipBytes, string FileName)?> DownloadQrZip(int qrcoderequestid);
         Task<bool> SendQrEmailAsync(SendEmailDto model);
-       // Task<T> AddUpdateQrWithImagesAsync<T>(T model);
+        // Task<T> AddUpdateQrWithImagesAsync<T>(T model);
+        Task<QrCodeRequestModel> SubmitQrApprovalRequestAsync(QrCodeRequestModel model);
+        Task<string> ApproveQrRequestAsync(int qrCodeRequestId, int approvedBy);
+        Task<string> RejectQrRequestAsync(int qrCodeRequestId, int rejectedBy, string reason);
     }
 }
