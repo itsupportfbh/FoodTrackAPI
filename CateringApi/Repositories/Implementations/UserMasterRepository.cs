@@ -247,5 +247,16 @@ WHERE Id = @Id;";
                 UpdatedDate = DateTime.Now
             });
         }
+
+
+
+        public async Task<IEnumerable<RolesDTO>> GetRoles()
+        {
+            const string sql = @"
+SELECT * from RoleMaster;";
+
+            using var con = _context.CreateConnection();
+            return await con.QueryAsync<RolesDTO>(sql);
+        }
     }
 }
