@@ -67,5 +67,16 @@ namespace CateringApi.Controllers
             ResponseResult data = new ResponseResult(true, "UserMaster Deleted sucessfully", null);
             return Ok(data);
         }
+
+
+
+        [HttpGet("GetRoles")]
+        public async Task<IActionResult> GetRoles()
+        {
+            var licenseObj = await _userMasterRepository.GetRoles();
+            ResponseResult data = new ResponseResult(true, "Success", licenseObj);
+            return Ok(data);
+        }
+
     }
 }
