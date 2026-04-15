@@ -1,4 +1,6 @@
 ﻿using System.ComponentModel;
+using System.Data;
+using System.Text;
 using CateringApi.Data;
 using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
@@ -115,7 +117,7 @@ WHERE Id = @CompanyId;";
         }
 
         public async Task<(IEnumerable<ReportByDateRowDto> Rows, IEnumerable<FoodTotalDto> Totals)>
-    GetReportByDatesAsync(ReportFilterDto model)
+            GetReportByDatesAsync(ReportFilterDto model)
         {
             using var con = _context.CreateConnection();
 
@@ -135,11 +137,47 @@ WHERE Id = @UserId
             int roleId = Convert.ToInt32(user.RoleId);
             int loggedInCompanyId = Convert.ToInt32(user.CompanyId);
 
-            int? finalCompanyId = roleId == 2
-                ? loggedInCompanyId
-                : model.CompanyId;
+            // Convert list filters to CSV
+            string? companyIdsCsv = model.CompanyIds != null && model.CompanyIds.Any()
+                ? string.Join(",", model.CompanyIds.Distinct())
+                : null;
 
-            // 🔹 MAIN REPORT
+            string? sessionIdsCsv = model.SessionIds != null && model.SessionIds.Any()
+                ? string.Join(",", model.SessionIds.Distinct())
+                : null;
+
+            string? cuisineIdsCsv = model.CuisineIds != null && model.CuisineIds.Any()
+                ? string.Join(",", model.CuisineIds.Distinct())
+                : null;
+
+            string? locationIdsCsv = model.LocationIds != null && model.LocationIds.Any()
+                ? string.Join(",", model.LocationIds.Distinct())
+                : null;
+
+            // backward compatibility with old single filters
+            if (string.IsNullOrWhiteSpace(companyIdsCsv) && model.CompanyId.HasValue)
+                companyIdsCsv = model.CompanyId.Value.ToString();
+
+            if (string.IsNullOrWhiteSpace(sessionIdsCsv) && model.SessionId.HasValue)
+                sessionIdsCsv = model.SessionId.Value.ToString();
+
+            if (string.IsNullOrWhiteSpace(cuisineIdsCsv) && model.CuisineId.HasValue)
+                cuisineIdsCsv = model.CuisineId.Value.ToString();
+
+            if (string.IsNullOrWhiteSpace(locationIdsCsv) && model.LocationId.HasValue)
+                locationIdsCsv = model.LocationId.Value.ToString();
+
+            // Role 2 users must always be restricted to their own company
+            string? finalCompanyIdsCsv;
+            if (roleId == 2)
+            {
+                finalCompanyIdsCsv = loggedInCompanyId > 0 ? loggedInCompanyId.ToString() : null;
+            }
+            else
+            {
+                finalCompanyIdsCsv = companyIdsCsv;
+            }
+
             const string mainSql = @"
 ;WITH DateSeries AS
 (
@@ -211,12 +249,32 @@ EffectiveRows AS
        AND rod.RequestDetailId = rd.Id
        AND rod.IsActive = 1
 
-    WHERE (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
+    WHERE (@CompanyIdsCsv IS NULL OR rh.CompanyId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@CompanyIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
       AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
       AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-      AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
-      AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
-      AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
+      AND (@SessionIdsCsv IS NULL OR rd.SessionId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@SessionIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
+      AND (@CuisineIdsCsv IS NULL OR rd.CuisineId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@CuisineIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
+      AND (@LocationIdsCsv IS NULL OR rd.LocationId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@LocationIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
 )
 SELECT
     CompanyName,
@@ -243,7 +301,6 @@ ORDER BY
     LocationSortId
 OPTION (MAXRECURSION 366);";
 
-            // 🔥 FOOD TOTAL (NEW)
             const string totalSql = @"
 ;WITH DateSeries AS
 (
@@ -302,12 +359,32 @@ EffectiveRows AS
        AND rod.RequestDetailId = rd.Id
        AND rod.IsActive = 1
 
-    WHERE (@CompanyId IS NULL OR rh.CompanyId = @CompanyId)
+    WHERE (@CompanyIdsCsv IS NULL OR rh.CompanyId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@CompanyIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
       AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
       AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-      AND (@SessionId IS NULL OR rd.SessionId = @SessionId)
-      AND (@CuisineId IS NULL OR rd.CuisineId = @CuisineId)
-      AND (@LocationId IS NULL OR rd.LocationId = @LocationId)
+      AND (@SessionIdsCsv IS NULL OR rd.SessionId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@SessionIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
+      AND (@CuisineIdsCsv IS NULL OR rd.CuisineId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@CuisineIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
+      AND (@LocationIdsCsv IS NULL OR rd.LocationId IN
+        (
+            SELECT TRY_CAST(value AS INT)
+            FROM STRING_SPLIT(@LocationIdsCsv, ',')
+            WHERE TRY_CAST(value AS INT) IS NOT NULL
+        ))
 )
 SELECT
     CuisineName,
@@ -317,25 +394,19 @@ GROUP BY CuisineName
 ORDER BY CuisineName
 OPTION (MAXRECURSION 366);";
 
-            var rows = await con.QueryAsync<ReportByDateRowDto>(mainSql, new
+            var sqlParams = new
             {
-                CompanyId = finalCompanyId,
+                CompanyIdsCsv = finalCompanyIdsCsv,
                 model.FromDate,
                 model.ToDate,
-                model.SessionId,
-                model.CuisineId,
-                model.LocationId
-            });
+                SessionIdsCsv = sessionIdsCsv,
+                CuisineIdsCsv = cuisineIdsCsv,
+                LocationIdsCsv = locationIdsCsv
+            };
 
-            var totals = await con.QueryAsync<FoodTotalDto>(totalSql, new
-            {
-                CompanyId = finalCompanyId,
-                model.FromDate,
-                model.ToDate,
-                model.SessionId,
-                model.CuisineId,
-                model.LocationId
-            });
+            var rows = await con.QueryAsync<ReportByDateRowDto>(mainSql, sqlParams);
+
+            var totals = await con.QueryAsync<FoodTotalDto>(totalSql, sqlParams);
 
             return (rows, totals);
         }
@@ -354,7 +425,15 @@ OPTION (MAXRECURSION 366);";
             string cuisineText = "All cuisines";
             string locationText = "All locations";
 
-            if (model.CompanyId.HasValue && model.CompanyId.Value > 0)
+            if (model.CompanyIds != null && model.CompanyIds.Any())
+            {
+                var names = await con.QueryAsync<string>(
+                    "SELECT CompanyName FROM dbo.CompanyMaster WHERE Id IN @Ids",
+                    new { Ids = model.CompanyIds.Distinct().ToList() }
+                );
+                companyText = string.Join(", ", names);
+            }
+            else if (model.CompanyId.HasValue && model.CompanyId.Value > 0)
             {
                 companyText = await con.QueryFirstOrDefaultAsync<string>(
                     "SELECT CompanyName FROM dbo.CompanyMaster WHERE Id = @Id",
@@ -362,7 +441,15 @@ OPTION (MAXRECURSION 366);";
                 ) ?? "All companies";
             }
 
-            if (model.SessionId.HasValue && model.SessionId.Value > 0)
+            if (model.SessionIds != null && model.SessionIds.Any())
+            {
+                var names = await con.QueryAsync<string>(
+                    "SELECT SessionName FROM dbo.Session WHERE Id IN @Ids",
+                    new { Ids = model.SessionIds.Distinct().ToList() }
+                );
+                sessionText = string.Join(", ", names);
+            }
+            else if (model.SessionId.HasValue && model.SessionId.Value > 0)
             {
                 sessionText = await con.QueryFirstOrDefaultAsync<string>(
                     "SELECT SessionName FROM dbo.Session WHERE Id = @Id",
@@ -370,7 +457,15 @@ OPTION (MAXRECURSION 366);";
                 ) ?? "All sessions";
             }
 
-            if (model.CuisineId.HasValue && model.CuisineId.Value > 0)
+            if (model.CuisineIds != null && model.CuisineIds.Any())
+            {
+                var names = await con.QueryAsync<string>(
+                    "SELECT CuisineName FROM dbo.CuisineMaster WHERE Id IN @Ids",
+                    new { Ids = model.CuisineIds.Distinct().ToList() }
+                );
+                cuisineText = string.Join(", ", names);
+            }
+            else if (model.CuisineId.HasValue && model.CuisineId.Value > 0)
             {
                 cuisineText = await con.QueryFirstOrDefaultAsync<string>(
                     "SELECT CuisineName FROM dbo.CuisineMaster WHERE Id = @Id",
@@ -378,7 +473,15 @@ OPTION (MAXRECURSION 366);";
                 ) ?? "All cuisines";
             }
 
-            if (model.LocationId.HasValue && model.LocationId.Value > 0)
+            if (model.LocationIds != null && model.LocationIds.Any())
+            {
+                var names = await con.QueryAsync<string>(
+                    "SELECT LocationName FROM dbo.Location WHERE Id IN @Ids",
+                    new { Ids = model.LocationIds.Distinct().ToList() }
+                );
+                locationText = string.Join(", ", names);
+            }
+            else if (model.LocationId.HasValue && model.LocationId.Value > 0)
             {
                 locationText = await con.QueryFirstOrDefaultAsync<string>(
                     "SELECT LocationName FROM dbo.Location WHERE Id = @Id",
@@ -391,7 +494,6 @@ OPTION (MAXRECURSION 366);";
 
             int row = 1;
 
-            // Header
             ws.Cells[row, 1].Value = "Report By Dates";
             ws.Cells[row, 1, row, 6].Merge = true;
             ws.Cells[row, 1].Style.Font.Size = 18;
@@ -404,7 +506,6 @@ OPTION (MAXRECURSION 366);";
             ws.Cells[row, 1].Style.Font.Bold = true;
             row += 2;
 
-            // Filters
             ws.Cells[row, 1].Value = "Company:";
             ws.Cells[row, 1].Style.Font.Bold = true;
             ws.Cells[row, 2].Value = companyText;
@@ -431,7 +532,6 @@ OPTION (MAXRECURSION 366);";
             ws.Cells[row, 6].Value = locationText;
             row += 2;
 
-            // Session & Cuisine Totals
             ws.Cells[row, 1].Value = "Session & Cuisine Totals";
             ws.Cells[row, 1].Style.Font.Bold = true;
             ws.Cells[row, 1].Style.Font.Size = 13;
@@ -476,7 +576,6 @@ OPTION (MAXRECURSION 366);";
 
             row++;
 
-            // Table Header
             ws.Cells[row, 1].Value = "Company";
             ws.Cells[row, 2].Value = "Date";
             ws.Cells[row, 3].Value = "Session";
@@ -492,7 +591,6 @@ OPTION (MAXRECURSION 366);";
 
             row++;
 
-            // Table Data
             foreach (var item in rows)
             {
                 ws.Cells[row, 1].Value = item.CompanyName;
@@ -519,19 +617,28 @@ OPTION (MAXRECURSION 366);";
                 throw new Exception("Recipient email is required.");
 
             var excelBytes = await ExportReportExcelAsync(model);
+
+            using var con = _context.CreateConnection();
+
             string companyText = "AllCompanies";
 
-            if (model.CompanyId.HasValue && model.CompanyId.Value > 0)
+            if (model.CompanyIds != null && model.CompanyIds.Any())
             {
-                using var con = _context.CreateConnection();
+                var names = await con.QueryAsync<string>(
+                    "SELECT CompanyName FROM dbo.CompanyMaster WHERE Id IN @Ids",
+                    new { Ids = model.CompanyIds.Distinct().ToList() }
+                );
 
+                companyText = string.Join("_", names);
+            }
+            else if (model.CompanyId.HasValue && model.CompanyId.Value > 0)
+            {
                 companyText = await con.QueryFirstOrDefaultAsync<string>(
                     "SELECT CompanyName FROM dbo.CompanyMaster WHERE Id = @Id",
                     new { Id = model.CompanyId.Value }
                 ) ?? "AllCompanies";
             }
 
-            // safe file name
             companyText = new string(companyText
                 .Where(c => char.IsLetterOrDigit(c) || c == '_' || c == '-')
                 .ToArray());
@@ -559,6 +666,5 @@ OPTION (MAXRECURSION 366);";
                 fileName
             );
         }
-
     }
 }
