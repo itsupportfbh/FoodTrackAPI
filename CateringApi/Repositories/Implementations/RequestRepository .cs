@@ -69,14 +69,23 @@ WHERE clm.CompanyId = @CompanyId
 ORDER BY l.Id;";
 
             const string siteSettingsSql = @"
-SELECT OrderDays
-FROM SiteSettings";
+SELECT TOP 1
+    OrderDays,
+    BreakfastCutOffTime,
+    LunchCutOffTime,
+    LateLunchCutOffTime,
+    DinnerCutOffTime,
+    LateDinnerCutOffTime
+FROM dbo.SiteSettings
+WHERE IsActive = 1
+ORDER BY Id DESC;";
 
             var companies = await con.QueryAsync<DropdownDto>(companySql, new { CompanyId = companyId ?? 0 });
             var sessions = await con.QueryAsync<DropdownDto>(sessionSql, new { CompanyId = companyId ?? 0 });
             var cuisines = await con.QueryAsync<DropdownDto>(cuisineSql, new { CompanyId = companyId ?? 0 });
             var locations = await con.QueryAsync<DropdownDto>(locationSql, new { CompanyId = companyId ?? 0 });
-            var orderDays = await con.QueryFirstOrDefaultAsync<int?>(siteSettingsSql);
+
+            var siteSettings = await con.QueryFirstOrDefaultAsync<SiteSettingsMasterDto>(siteSettingsSql);
 
             return new RequestPageMasterDto
             {
@@ -84,7 +93,13 @@ FROM SiteSettings";
                 Sessions = sessions,
                 Cuisines = cuisines,
                 Locations = locations,
-                OrderDays = orderDays ?? 3
+                OrderDays = siteSettings?.OrderDays ?? 3,
+
+                BreakfastCutOffTime = siteSettings?.BreakfastCutOffTime,
+                LunchCutOffTime = siteSettings?.LunchCutOffTime,
+                LateLunchCutOffTime = siteSettings?.LateLunchCutOffTime,
+                DinnerCutOffTime = siteSettings?.DinnerCutOffTime,
+                LateDinnerCutOffTime = siteSettings?.LateDinnerCutOffTime
             };
         }
 
