@@ -1005,9 +1005,10 @@ namespace CateringApi.Repositories.Implementations
                     .Select(x => new
                     {
                         x.Id,
-                        x.FromDate,
-                        x.ToDate,
-                        TotalQty = (int?)x.TotalQty
+                        FromDate = x.FromDate.Date,
+                        ToDate = x.ToDate.Date,
+                        TotalQty = (int?)x.TotalQty,
+                        DifferentQty = (int?)x.DifferentQty
                     })
                     .ToListAsync();
 
@@ -1016,10 +1017,9 @@ namespace CateringApi.Repositories.Implementations
                     .Select(x => new
                     {
                         x.Id,
-                        x.RequestId,
-                        OverrideId = (int?)x.OverrideId,
-                        x.QRValidFrom,
-                        x.QRValidTill,
+                        x.CompanyId,
+                        QRValidFrom = x.QRValidFrom.Date,
+                        QRValidTill = x.QRValidTill.Date,
                         NoofQR = (int?)x.NoofQR
                     })
                     .ToListAsync();
@@ -1030,18 +1030,16 @@ namespace CateringApi.Repositories.Implementations
             reqTo.AddDays(1)
         };
 
-                // Override boundaries
                 foreach (var ov in overrides)
                 {
-                    boundaries.Add(ov.FromDate.Date);
-                    boundaries.Add(ov.ToDate.Date.AddDays(1));
+                    boundaries.Add(ov.FromDate);
+                    boundaries.Add(ov.ToDate.AddDays(1));
                 }
 
-                // QR boundaries ALSO needed for partial segment split
                 foreach (var qr in qrBatches)
                 {
-                    boundaries.Add(qr.QRValidFrom.Date);
-                    boundaries.Add(qr.QRValidTill.Date.AddDays(1));
+                    boundaries.Add(qr.QRValidFrom);
+                    boundaries.Add(qr.QRValidTill.AddDays(1));
                 }
 
                 boundaries = boundaries
@@ -1061,24 +1059,37 @@ namespace CateringApi.Repositories.Implementations
                         continue;
 
                     var appliedOverride = overrides
-                        .Where(x => x.FromDate.Date <= segFrom && x.ToDate.Date >= segTill)
+                        .Where(x => x.FromDate <= segFrom && x.ToDate >= segTill)
                         .OrderByDescending(x => x.Id)
                         .FirstOrDefault();
 
-                    int effectiveOverrideId = appliedOverride?.Id ?? 0;
-
-                    int requiredQty = appliedOverride != null
-                        ? (appliedOverride.TotalQty ?? 0)
-                        : baseQty;
-
-                    // Any generated QR batch that fully covers THIS SMALL segment
-                    int generatedQty = qrBatches
+                    int totalGeneratedQty = qrBatches
                         .Where(x =>
-                            x.QRValidFrom.Date <= segFrom &&
-                            x.QRValidTill.Date >= segTill)
+                            x.CompanyId == req.CompanyId &&
+                            x.QRValidFrom <= segFrom &&
+                            x.QRValidTill >= segTill)
                         .Sum(x => x.NoofQR ?? 0);
 
-                    int pendingQty = requiredQty - generatedQty;
+                    int pendingQty = 0;
+                    string sourceType = "REQUEST_PENDING";
+                    int? effectiveOverrideId = null;
+
+                    if (appliedOverride != null)
+                    {
+                        effectiveOverrideId = appliedOverride.Id;
+                        sourceType = "OVERRIDE_PENDING";
+
+                        int extraQty = appliedOverride.DifferentQty ?? 0;
+
+                        // Total generated qty-il base qty cover aana part remove pannrom
+                        int overrideGeneratedQty = Math.Max(0, totalGeneratedQty - baseQty);
+
+                        pendingQty = extraQty - overrideGeneratedQty;
+                    }
+                    else
+                    {
+                        pendingQty = baseQty - totalGeneratedQty;
+                    }
 
                     if (pendingQty <= 0)
                         continue;
@@ -1086,7 +1097,7 @@ namespace CateringApi.Repositories.Implementations
                     result.Add(new RequestDropdownDto
                     {
                         RequestId = req.RequestId,
-                        OverrideId = effectiveOverrideId == 0 ? null : effectiveOverrideId,
+                        OverrideId = effectiveOverrideId,
                         RequestNo = req.RequestNo,
                         CompanyId = req.CompanyId,
                         CompanyName = req.CompanyName,
@@ -1094,8 +1105,8 @@ namespace CateringApi.Repositories.Implementations
                         Qty = pendingQty,
                         FromDate = segFrom,
                         TillDate = segTill,
-                        SourceType = effectiveOverrideId > 0 ? "OVERRIDE_PENDING" : "REQUEST_PENDING",
-                        DisplayText = effectiveOverrideId > 0
+                        SourceType = sourceType,
+                        DisplayText = effectiveOverrideId.HasValue
                             ? $"{req.RequestNo} - {req.CompanyName} - Override #{effectiveOverrideId} - {segFrom:dd-MM-yyyy} to {segTill:dd-MM-yyyy} - Qty {pendingQty}"
                             : $"{req.RequestNo} - {req.CompanyName} - {segFrom:dd-MM-yyyy} to {segTill:dd-MM-yyyy} - Qty {pendingQty}"
                     });

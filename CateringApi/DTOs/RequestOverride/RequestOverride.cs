@@ -15,6 +15,7 @@ namespace CateringApi.DTOs.RequestOverride
         public int? UpdatedBy { get; set; }
         public DateTime? UpdatedDate { get; set; }
         public int TotalQty { get; set; }
+        public int DifferentQty {  get; set; }  
         public ICollection<RequestOverrideDetail> RequestOverrideDetails { get; set; }
             = new List<RequestOverrideDetail>();
     }
