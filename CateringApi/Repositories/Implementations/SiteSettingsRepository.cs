@@ -63,9 +63,8 @@ namespace CateringApi.Repositories.Implementations
         public async Task<SiteSettings> AddUpdateSiteSettings(SiteSettings model)
         {
             var existing = await _context.SiteSettings
-                .FirstOrDefaultAsync(x => x.Id == model.Id && x.IsActive==true);
+                .FirstOrDefaultAsync(x => x.Id == model.Id && x.IsActive == true);
 
-            // 👉 INSERT
             if (existing == null)
             {
                 var entity = new SiteSettings
@@ -77,15 +76,16 @@ namespace CateringApi.Repositories.Implementations
                     LateDinnerCutOffTime = model.LateDinnerCutOffTime,
                     orderDays = model.orderDays,
                     CronEmail = model.CronEmail,
-
                     IsActive = true,
                     CreatedDate = DateTime.Now,
-                    CreatedBy = model.CreatedBy
+                    CreatedBy = model.CreatedBy,
+                    UpdatedBy = model.UpdatedBy
                 };
 
                 await _context.SiteSettings.AddAsync(entity);
+                await _context.SaveChangesAsync();
+                return entity;
             }
-            // 👉 UPDATE
             else
             {
                 existing.BreakfastCutOffTime = model.BreakfastCutOffTime;
@@ -95,13 +95,12 @@ namespace CateringApi.Repositories.Implementations
                 existing.LateDinnerCutOffTime = model.LateDinnerCutOffTime;
                 existing.orderDays = model.orderDays;
                 existing.CronEmail = model.CronEmail;
-
                 existing.UpdatedDate = DateTime.Now;
                 existing.UpdatedBy = model.UpdatedBy;
-            }
 
-            await _context.SaveChangesAsync();
-            return model;
+                await _context.SaveChangesAsync();
+                return existing;
+            }
         }
 
         public Task<SiteSettings> GetSiteSettingsbyid(int id)
