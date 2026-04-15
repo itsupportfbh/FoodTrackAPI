@@ -3,12 +3,21 @@
     public class ReportFilterDto
     {
         public int UserId { get; set; }
+
+        // old single-select support
         public int? CompanyId { get; set; }
-        public DateTime? FromDate { get; set; }
-        public DateTime? ToDate { get; set; }
         public int? SessionId { get; set; }
         public int? CuisineId { get; set; }
         public int? LocationId { get; set; }
+
+        public DateTime? FromDate { get; set; }
+        public DateTime? ToDate { get; set; }
+
+        // new multi-select support
+        public List<int>? CompanyIds { get; set; }
+        public List<int>? SessionIds { get; set; }
+        public List<int>? CuisineIds { get; set; }
+        public List<int>? LocationIds { get; set; }
     }
 
     public class ReportByDateRowDto
@@ -38,7 +47,6 @@
         public string CuisineName { get; set; } = string.Empty;
         public decimal TotalQty { get; set; }
     }
-
 
     public class ReportEmailRequestDto : ReportFilterDto
     {

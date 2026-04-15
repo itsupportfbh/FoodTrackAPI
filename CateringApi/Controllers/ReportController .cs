@@ -29,7 +29,7 @@ namespace CateringApi.Controllers
                 return BadRequest("UserId is required.");
 
             if (model.FromDate.HasValue && model.ToDate.HasValue && model.FromDate > model.ToDate)
-                return BadRequest("From Date should not be greater than ToDate.");
+                return BadRequest("From Date should not be greater than To Date.");
 
             var (rows, totals) = await _repository.GetReportByDatesAsync(model);
 
@@ -43,6 +43,12 @@ namespace CateringApi.Controllers
         [HttpPost("ExportReportExcel")]
         public async Task<IActionResult> ExportReportExcel([FromBody] ReportFilterDto model)
         {
+            if (model.UserId <= 0)
+                return BadRequest("UserId is required.");
+
+            if (model.FromDate.HasValue && model.ToDate.HasValue && model.FromDate > model.ToDate)
+                return BadRequest("From Date should not be greater than To Date.");
+
             var fileBytes = await _repository.ExportReportExcelAsync(model);
 
             return File(
@@ -55,6 +61,12 @@ namespace CateringApi.Controllers
         [HttpPost("SendReportEmail")]
         public async Task<IActionResult> SendReportEmail([FromBody] ReportEmailRequestDto model)
         {
+            if (model.UserId <= 0)
+                return BadRequest("UserId is required.");
+
+            if (model.FromDate.HasValue && model.ToDate.HasValue && model.FromDate > model.ToDate)
+                return BadRequest("From Date should not be greater than To Date.");
+
             await _repository.SendReportEmailAsync(model);
             return Ok(new { message = "Report mail sent successfully" });
         }
