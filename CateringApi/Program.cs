@@ -81,6 +81,7 @@ builder.Services.AddScoped<IDashboardRepository, DashboardRepository>();
 builder.Services.AddScoped<IReportRepository, ReportRepository>();
 builder.Services.AddScoped<IUserMasterRepository, UserMasterRepository>();
 builder.Services.AddScoped<IMenuRepository, MenuRepository>();
+builder.Services.AddScoped<ICuisinePriceRepository, CuisinePriceRepository>();
 
 // Service registrations
 builder.Services.AddScoped<IJwtService, JwtService>();
