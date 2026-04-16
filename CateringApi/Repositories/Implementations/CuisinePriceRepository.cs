@@ -25,13 +25,16 @@ SELECT
     c.CuisineName,
     ISNULL(cp.Rate, 0) AS Rate,
     cp.EffectiveFrom
-FROM dbo.CuisineMaster c
+FROM dbo.CompanyCuisineMap ccm
+INNER JOIN dbo.CuisineMaster c
+    ON c.Id = ccm.CuisineId
+   AND c.IsActive = 1
 LEFT JOIN dbo.CuisinePrice cp
     ON cp.CuisineId = c.Id
-   AND cp.CompanyId = @CompanyId
+   AND cp.CompanyId = ccm.CompanyId
    AND cp.SessionId = @SessionId
    AND cp.IsActive = 1
-WHERE c.IsActive = 1
+WHERE ccm.CompanyId = @CompanyId
 ORDER BY c.CuisineName;";
 
             return await con.QueryAsync<CuisineRateViewModel>(sql, new
