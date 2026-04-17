@@ -1,4 +1,5 @@
-﻿using CateringApi.Repositories.Interfaces;
+﻿using CateringApi.DTOModel;
+using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,9 +18,10 @@ namespace CateringApi.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetDashboard()
+        [HttpGet]
+        public async Task<IActionResult> GetDashboard([FromQuery] DashboardFilterDTO filter)
         {
-            var data = await _dashboardRepository.GetDashboardData();
+            var data = await _dashboardRepository.GetDashboardData(filter);
             return Ok(data);
         }
     }

@@ -5,7 +5,7 @@ namespace CateringApi.Repositories.Interfaces
 {
     public interface IDashboardRepository
     {
-        public Task<DashboardDTO> GetDashboardData();
+        Task<DashboardDTO> GetDashboardData(DashboardFilterDTO filter);
 
     }
 }
