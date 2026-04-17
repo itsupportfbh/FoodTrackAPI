@@ -30,21 +30,15 @@ namespace CateringApi.Controllers
         }
 
         [HttpPost("save-bulk")]
-        public async Task<IActionResult> SaveBulk([FromBody] BulkCuisinePriceSaveRequest request)
+        public async Task<IActionResult> SaveSessionRate([FromBody] SessionRateSaveRequest request)
         {
-            try
+            var result = await _repository.SaveSessionRateAsync(request);
+
+            return Ok(new
             {
-                var result = await _repository.SaveBulkCuisinePricesAsync(request);
-                return Ok(new
-                {
-                    success = result,
-                    message = "All cuisine rates saved successfully"
-                });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { success = false, message = ex.Message });
-            }
+                success = result,
+                message = "Session price saved successfully"
+            });
         }
 
         [HttpGet("history")]
@@ -59,6 +53,12 @@ namespace CateringApi.Controllers
             {
                 return BadRequest(new { success = false, message = ex.Message });
             }
+        }
+        [HttpGet("GetPriceList")]
+        public async Task<IActionResult> GetPriceList()
+        {
+            var result = await _repository.GetPriceList();
+            return Ok(result);
         }
     }
 }
