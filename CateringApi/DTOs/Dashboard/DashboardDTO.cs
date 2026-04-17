@@ -9,7 +9,6 @@ namespace CateringApi.DTOs.Dashboard
         public int TotalCompanies { get; set; }
         public int TotalOrders { get; set; }
         public int TotalQRCodes { get; set; }
-
         public int TodayScans { get; set; }
         public int YesterdayScans { get; set; }
 
@@ -24,5 +23,18 @@ namespace CateringApi.DTOs.Dashboard
         public List<SessionOrderDTO> TotalOrdersBySession { get; set; } = new();
         public List<CompanyOrderDTO> TotalcompanyWiseOrders { get; set; } = new();
         public List<LatestQrDTO> TotallatestUsedQRs { get; set; } = new();
+
+        public List<DashboardPriceDto> CurrentSessionPrices { get; set; } = new();
+    }
+
+    public class DashboardPriceDto
+    {
+        public int PriceId { get; set; }
+        public int CompanyId { get; set; }
+        public string CompanyName { get; set; } = string.Empty;
+        public int SessionId { get; set; }
+        public string SessionName { get; set; } = string.Empty;
+        public decimal Rate { get; set; }
+        public DateTime EffectiveFrom { get; set; }
     }
 }

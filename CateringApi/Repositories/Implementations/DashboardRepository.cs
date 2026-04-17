@@ -452,7 +452,34 @@ namespace CateringApi.Repositories.Implementations
 
             if (todayPendingQty < 0)
                 todayPendingQty = 0;
+            var currentSessionPricesQuery =
+    from p in _context.SessionPrice
+    join c in _context.CompanyMaster on p.CompanyId equals c.Id
+    join s in _context.Session on p.SessionId equals s.Id
+    where p.IsActive
+    select new DashboardPriceDto
+    {
+        PriceId = p.Id,
+        CompanyId = p.CompanyId,
+        CompanyName = c.CompanyName ?? "",
+        SessionId = p.SessionId,
+        SessionName = s.SessionName ?? "",
+        Rate = p.Rate,
+        EffectiveFrom = p.EffectiveFrom
+    };
 
+            if (hasCompanyFilter)
+                currentSessionPricesQuery = currentSessionPricesQuery
+                    .Where(x => companyIds.Contains(x.CompanyId));
+
+            if (hasSessionFilter)
+                currentSessionPricesQuery = currentSessionPricesQuery
+                    .Where(x => sessionIds.Contains(x.SessionId));
+
+            var currentSessionPrices = await currentSessionPricesQuery
+                .OrderBy(x => x.CompanyName)
+                .ThenBy(x => x.SessionName)
+                .ToListAsync();
             return new DashboardDTO
             {
                 TotalCompanies = totalCompanies,
@@ -468,7 +495,8 @@ namespace CateringApi.Repositories.Implementations
                 MonthPendingQty = monthPendingQty,
                 TotalOrdersBySession = ordersBySession,
                 TotalcompanyWiseOrders = companyWiseOrders,
-                TotallatestUsedQRs = latestUsedQRs
+                TotallatestUsedQRs = latestUsedQRs,
+                CurrentSessionPrices = currentSessionPrices
             };
         }
 
