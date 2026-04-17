@@ -28,6 +28,8 @@
         public string CuisineName { get; set; } = string.Empty;
         public string LocationName { get; set; } = string.Empty;
         public decimal Count { get; set; }
+        public decimal Rate { get; set; }
+        public decimal TotalAmount { get; set; }
     }
 
     public class ReportPageMasterDto
