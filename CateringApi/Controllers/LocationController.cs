@@ -3,6 +3,7 @@ using CateringApi.DTOs.Common;
 using CateringApi.DTOs.Company;
 using CateringApi.DTOs.Location;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,6 +11,7 @@ namespace CateringApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class LocationController : ControllerBase
     {
         private readonly ILocationRepository _repository;

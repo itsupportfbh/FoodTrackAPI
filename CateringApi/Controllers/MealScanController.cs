@@ -1,12 +1,14 @@
 ﻿using CateringApi.DTOs.Common;
 using CateringApi.DTOs.MealScan;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class MealScanController : ControllerBase
     {
         private readonly IMealScanRepository _repository;

@@ -1,10 +1,12 @@
 ﻿using CateringApi.DTOs.RequestOverride;
 using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class RequestOverrideController : ControllerBase
 {
     private readonly IRequestOverrideRepository _service;

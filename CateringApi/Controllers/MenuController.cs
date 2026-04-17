@@ -1,12 +1,14 @@
 ﻿using CateringApi.DTOs;
 using CateringApi.DTOs.Menu;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class MenuController : ControllerBase
     {
         private readonly IMenuRepository _repository;

@@ -1,12 +1,14 @@
 ﻿using CateringApi.Models;
 using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class RequestController : ControllerBase
     {
         private readonly IRequestRepository _repository;

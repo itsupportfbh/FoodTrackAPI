@@ -1,5 +1,6 @@
 ﻿using CateringApi.DTOs.Master;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -7,6 +8,7 @@ namespace CateringApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class SiteSettingsController : ControllerBase
     {
         private readonly ISiteSettingsRepository _siteSettingsRepository;
