@@ -19,6 +19,7 @@ namespace CateringApi.DTOs.Dashboard
         public decimal MonthOrderedQty { get; set; }
         public decimal MonthRedeemedQty { get; set; }
         public decimal MonthPendingQty { get; set; }
+        public decimal TotalPrice { get; set; }
 
         public List<SessionOrderDTO> TotalOrdersBySession { get; set; } = new();
         public List<CompanyOrderDTO> TotalcompanyWiseOrders { get; set; } = new();
