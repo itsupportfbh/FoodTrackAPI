@@ -222,7 +222,8 @@ namespace CateringApi.Repositories.Implementations
                             CuisineId = row.CuisineId,
                             LocationId = row.LocationId,
                             CompanyId = row.CompanyId,
-                            Qty = row.Qty
+                            Qty = row.Qty,
+                            OrderDate = date
                         });
                     }
                 }
@@ -452,6 +453,31 @@ namespace CateringApi.Repositories.Implementations
 
             if (todayPendingQty < 0)
                 todayPendingQty = 0;
+
+            // STEP 3 - add here
+            var sessionPriceHistoryQuery =
+                from h in _context.SessionPriceHistory
+                where h.EffectiveFrom <= toDate
+                select new
+                {
+                    h.CompanyId,
+                    h.SessionId,
+                    h.Rate,
+                    EffectiveFrom = h.EffectiveFrom.Date,
+                    EffectiveTo = h.EffectiveTo.HasValue ? h.EffectiveTo.Value.Date : (DateTime?)null
+                };
+
+            if (hasCompanyFilter)
+                sessionPriceHistoryQuery = sessionPriceHistoryQuery
+                    .Where(x => companyIds.Contains(x.CompanyId));
+
+            if (hasSessionFilter)
+                sessionPriceHistoryQuery = sessionPriceHistoryQuery
+                    .Where(x => sessionIds.Contains(x.SessionId));
+
+            var sessionPriceHistory = await sessionPriceHistoryQuery.ToListAsync();
+
+
             var currentSessionPricesQuery =
     from p in _context.SessionPrice
     join c in _context.CompanyMaster on p.CompanyId equals c.Id
@@ -480,6 +506,27 @@ namespace CateringApi.Repositories.Implementations
                 .OrderBy(x => x.CompanyName)
                 .ThenBy(x => x.SessionName)
                 .ToListAsync();
+
+            // STEP 4 - add here
+            decimal totalPrice = 0;
+
+            foreach (var row in effectiveRows)
+            {
+                var matchedRate = sessionPriceHistory
+                    .Where(x => x.CompanyId == row.CompanyId
+                             && x.SessionId == row.SessionId
+                             && x.EffectiveFrom <= row.OrderDate
+                             && (!x.EffectiveTo.HasValue || x.EffectiveTo.Value >= row.OrderDate))
+                    .OrderByDescending(x => x.EffectiveFrom)
+                    .FirstOrDefault();
+
+                if (matchedRate != null)
+                {
+                    totalPrice += row.Qty * matchedRate.Rate;
+                }
+            }
+
+
             return new DashboardDTO
             {
                 TotalCompanies = totalCompanies,
@@ -496,7 +543,8 @@ namespace CateringApi.Repositories.Implementations
                 TotalOrdersBySession = ordersBySession,
                 TotalcompanyWiseOrders = companyWiseOrders,
                 TotallatestUsedQRs = latestUsedQRs,
-                CurrentSessionPrices = currentSessionPrices
+                CurrentSessionPrices = currentSessionPrices,
+                TotalPrice = totalPrice
             };
         }
 
@@ -508,6 +556,7 @@ namespace CateringApi.Repositories.Implementations
             public int LocationId { get; set; }
             public int CompanyId { get; set; }
             public decimal Qty { get; set; }
+            public DateTime OrderDate { get; set; }
         }
     }
 }
