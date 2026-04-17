@@ -340,31 +340,31 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
 
         public async Task<List<PriceListDto>> GetPriceList()
         {
-            var query = from h in _context1.SessionPriceHistory
-                        join c in _context1.CompanyMaster on h.CompanyId equals c.Id
-                        join s in _context1.Session on h.SessionId equals s.Id
-                        join p in _context1.SessionPrice on h.PriceId equals p.Id into priceJoin
-                        from p in priceJoin.DefaultIfEmpty()
-                        orderby h.CreatedDate descending
+            var query = from p in _context1.SessionPrice
+                        join c in _context1.CompanyMaster on p.CompanyId equals c.Id
+                        join s in _context1.Session on p.SessionId equals s.Id
+                        where p.IsActive
                         select new PriceListDto
                         {
-                            Id = h.Id,
-                            PriceId = h.PriceId,
-                            CompanyId = h.CompanyId,
+                            Id = p.Id,
+                            PriceId = p.Id,
+                            CompanyId = p.CompanyId,
                             CompanyName = c.CompanyName,
-                            SessionId = h.SessionId,
+                            SessionId = p.SessionId,
                             SessionName = s.SessionName,
                             CuisineId = 0,
                             CuisineName = string.Empty,
-                            Rate = h.Rate,
-                            EffectiveFrom = h.EffectiveFrom,
-                            EffectiveTo = h.EffectiveTo,
-                            ActionType = h.ActionType,
-                            IsActive = p != null && p.IsActive,
-                            IsCurrent = p != null && p.IsActive
+                            Rate = p.Rate,
+                            EffectiveFrom = p.EffectiveFrom,
+                            EffectiveTo = null,
+                            ActionType = "CURRENT",
+                            IsActive = p.IsActive,
+                            IsCurrent = true
                         };
 
-            return await query.ToListAsync();
+            return await query
+                .OrderByDescending(x => x.EffectiveFrom)
+                .ToListAsync();
         }
 
         #endregion
