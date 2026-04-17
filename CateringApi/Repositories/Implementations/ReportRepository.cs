@@ -200,21 +200,28 @@ WHERE Id = @UserId
 EffectiveRows AS
 (
     SELECT
+        rh.CompanyId,
         cm.CompanyName,
         ds.ReportDate,
+        s.Id AS SessionId,
         s.Id AS SessionSortId,
         s.SessionName,
         cu.Id AS CuisineSortId,
         cu.CuisineName,
         l.Id AS LocationSortId,
         l.LocationName,
-        CASE
-            WHEN rod.Id IS NOT NULL
-                 AND ISNULL(rod.IsCancelled, 0) = 0
-                 AND ro.Id IS NOT NULL
-            THEN rod.OverrideQty
-            ELSE rd.Qty
-        END AS EffectiveQty
+
+        CAST(
+            CASE
+                WHEN rod.Id IS NOT NULL
+                     AND ISNULL(rod.IsCancelled, 0) = 0
+                     AND ro.Id IS NOT NULL
+                THEN rod.OverrideQty
+                ELSE rd.Qty
+            END
+        AS decimal(18,2)) AS EffectiveQty,
+
+        CAST(ISNULL(ratePick.Rate, 0) AS decimal(18,2)) AS Rate
     FROM DateSeries ds
     INNER JOIN dbo.RequestHeader rh
         ON rh.Id = ds.RequestHeaderId
@@ -249,6 +256,41 @@ EffectiveRows AS
        AND rod.RequestDetailId = rd.Id
        AND rod.IsActive = 1
 
+    OUTER APPLY
+    (
+        SELECT TOP 1 x.Rate
+        FROM
+        (
+            -- Current active session price
+            SELECT
+                sp.Rate,
+                CAST(sp.EffectiveFrom AS date) AS EffectiveFrom,
+                CAST('9999-12-31' AS date) AS EffectiveTo,
+                1 AS SortOrder
+            FROM dbo.SessionPrice sp
+            WHERE sp.CompanyId = rh.CompanyId
+              AND sp.SessionId = rd.SessionId
+              AND sp.IsActive = 1
+              AND CAST(sp.EffectiveFrom AS date) <= ds.ReportDate
+
+            UNION ALL
+
+            -- Historical session price
+            SELECT
+                sph.Rate,
+                CAST(sph.EffectiveFrom AS date) AS EffectiveFrom,
+                CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date) AS EffectiveTo,
+                2 AS SortOrder
+            FROM dbo.SessionPriceHistory sph
+            WHERE sph.CompanyId = rh.CompanyId
+              AND sph.SessionId = rd.SessionId
+              AND ds.ReportDate BETWEEN CAST(sph.EffectiveFrom AS date)
+                                   AND CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date)
+        ) x
+        WHERE ds.ReportDate BETWEEN x.EffectiveFrom AND x.EffectiveTo
+        ORDER BY x.EffectiveFrom DESC, x.SortOrder ASC
+    ) ratePick
+
     WHERE (@CompanyIdsCsv IS NULL OR rh.CompanyId IN
         (
             SELECT TRY_CAST(value AS INT)
@@ -282,7 +324,9 @@ SELECT
     SessionName,
     CuisineName,
     LocationName,
-    SUM(EffectiveQty) AS Count
+    SUM(EffectiveQty) AS Count,
+    Rate,
+    SUM(EffectiveQty * Rate) AS TotalAmount
 FROM EffectiveRows
 GROUP BY
     CompanyName,
@@ -292,7 +336,8 @@ GROUP BY
     CuisineSortId,
     CuisineName,
     LocationSortId,
-    LocationName
+    LocationName,
+    Rate
 ORDER BY
     CompanyName,
     ReportDate DESC,
@@ -582,14 +627,18 @@ OPTION (MAXRECURSION 366);";
             ws.Cells[row, 4].Value = "Cuisine";
             ws.Cells[row, 5].Value = "Location";
             ws.Cells[row, 6].Value = "Count";
+            ws.Cells[row, 7].Value = "Rate (S$)";
+            ws.Cells[row, 8].Value = "Total (S$)";
 
-            using (var range = ws.Cells[row, 1, row, 6])
+            using (var range = ws.Cells[row, 1, row, 8])
             {
                 range.Style.Font.Bold = true;
                 range.Style.Font.Size = 12;
             }
 
             row++;
+
+            decimal grandTotalAmount = 0;
 
             foreach (var item in rows)
             {
@@ -600,8 +649,24 @@ OPTION (MAXRECURSION 366);";
                 ws.Cells[row, 4].Value = item.CuisineName;
                 ws.Cells[row, 5].Value = item.LocationName;
                 ws.Cells[row, 6].Value = item.Count;
+                ws.Cells[row, 7].Value = item.Rate;
+                ws.Cells[row, 7].Style.Numberformat.Format = "#,##0.00";
+
+                ws.Cells[row, 8].Value = item.TotalAmount;
+                ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
+
+                grandTotalAmount += Convert.ToDecimal(item.TotalAmount);
                 row++;
             }
+            ws.Cells[row, 1, row, 7].Merge = true;
+            ws.Cells[row, 1].Value = "Grand Total (S$)";
+            ws.Cells[row, 1].Style.Font.Bold = true;
+            ws.Cells[row, 1].Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Right;
+
+            ws.Cells[row, 8].Value = grandTotalAmount;
+            ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
+            ws.Cells[row, 8].Style.Font.Bold = true;
+
 
             if (ws.Dimension != null)
             {
