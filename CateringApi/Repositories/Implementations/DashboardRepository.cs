@@ -1,8 +1,9 @@
 ﻿using CateringApi.Data;
+using CateringApi.DTOModel;
 using CateringApi.DTOs.Company;
 using CateringApi.DTOs.Dashboard;
-using CateringApi.DTOs.Session;
 using CateringApi.DTOs.QR;
+using CateringApi.DTOs.Session;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,30 +18,41 @@ namespace CateringApi.Repositories.Implementations
             _context = context;
         }
 
-        public async Task<DashboardDTO> GetDashboardData()
+        public async Task<DashboardDTO> GetDashboardData(DashboardFilterDTO filter)
         {
+            filter ??= new DashboardFilterDTO();
+
             var today = DateTime.Today;
             var yesterday = today.AddDays(-1);
 
-            var monthStart = new DateTime(today.Year, today.Month, 1);
-            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            var fromDate = filter.FromDate?.Date ?? new DateTime(today.Year, today.Month, 1);
+            var toDate = filter.ToDate?.Date ?? fromDate.AddMonths(1).AddDays(-1);
 
-            var totalCompanies = await _context.CompanyMaster
-                .Where(x => x.IsActive)
-                .CountAsync();
+            var companyIds = filter.CompanyIds?.Distinct().ToList() ?? new List<int>();
+            var sessionIds = filter.SessionIds?.Distinct().ToList() ?? new List<int>();
+            var locationIds = filter.LocationIds?.Distinct().ToList() ?? new List<int>();
 
-            var totalOrders = await _context.RequestHeader
-                .Where(x => x.IsActive)
-                .CountAsync();
+            var hasCompanyFilter = companyIds.Any();
+            var hasSessionFilter = sessionIds.Any();
+            var hasLocationFilter = locationIds.Any();
 
-            var totalQrCodes = await _context.QrCodeRequest
-                .Where(x => x.IsActive)
-                .SumAsync(x => (int?)x.NoofQR) ?? 0;
+            var totalCompaniesQuery = _context.CompanyMaster
+                .Where(x => x.IsActive);
 
-            var monthRequests = await _context.RequestHeader
+            if (hasCompanyFilter)
+                totalCompaniesQuery = totalCompaniesQuery.Where(x => companyIds.Contains(x.Id));
+
+            var totalCompanies = await totalCompaniesQuery.CountAsync();
+
+            var requestHeaderQuery = _context.RequestHeader
                 .Where(r => r.IsActive &&
-                            r.FromDate <= monthEnd &&
-                            r.ToDate >= monthStart)
+                            r.FromDate <= toDate &&
+                            r.ToDate >= fromDate);
+
+            if (hasCompanyFilter)
+                requestHeaderQuery = requestHeaderQuery.Where(r => companyIds.Contains(r.CompanyId));
+
+            var monthRequests = await requestHeaderQuery
                 .Select(r => new
                 {
                     r.Id,
@@ -51,12 +63,23 @@ namespace CateringApi.Repositories.Implementations
                 .ToListAsync();
 
             var requestIds = monthRequests.Select(x => x.Id).ToList();
+            var totalOrders = requestIds.Count;
+
+            var qrRequestQuery = _context.QrCodeRequest
+                .Where(x => x.IsActive &&
+                            x.QRValidFrom <= toDate &&
+                            x.QRValidTill >= fromDate);
+
+            if (hasCompanyFilter)
+                qrRequestQuery = qrRequestQuery.Where(x => companyIds.Contains(x.CompanyId));
+
+            var totalQrCodes = await qrRequestQuery.SumAsync(x => (int?)x.NoofQR) ?? 0;
 
             var monthOverrides = await _context.RequestOverride
                 .Where(o => o.IsActive &&
                             requestIds.Contains(o.RequestHeaderId) &&
-                            o.FromDate <= monthEnd &&
-                            o.ToDate >= monthStart)
+                            o.FromDate <= toDate &&
+                            o.ToDate >= fromDate)
                 .Select(o => new
                 {
                     o.Id,
@@ -70,8 +93,16 @@ namespace CateringApi.Repositories.Implementations
 
             var overrideIds = monthOverrides.Select(x => x.Id).ToList();
 
-            var baseDetails = await _context.RequestDetail
-                .Where(x => x.IsActive && requestIds.Contains(x.RequestHeaderId))
+            var baseDetailsQuery = _context.RequestDetail
+                .Where(x => x.IsActive && requestIds.Contains(x.RequestHeaderId));
+
+            if (hasSessionFilter)
+                baseDetailsQuery = baseDetailsQuery.Where(x => sessionIds.Contains(x.SessionId));
+
+            if (hasLocationFilter)
+                baseDetailsQuery = baseDetailsQuery.Where(x => locationIds.Contains(x.LocationId));
+
+            var baseDetails = await baseDetailsQuery
                 .Select(x => new
                 {
                     RequestDetailId = x.Id,
@@ -83,10 +114,18 @@ namespace CateringApi.Repositories.Implementations
                 })
                 .ToListAsync();
 
-            var overrideDetails = await _context.RequestOverrideDetail
+            var overrideDetailsQuery = _context.RequestOverrideDetail
                 .Where(x => x.IsActive &&
                             overrideIds.Contains(x.RequestOverrideId) &&
-                            !x.IsCancelled)
+                            !x.IsCancelled);
+
+            if (hasSessionFilter)
+                overrideDetailsQuery = overrideDetailsQuery.Where(x => sessionIds.Contains(x.SessionId));
+
+            if (hasLocationFilter)
+                overrideDetailsQuery = overrideDetailsQuery.Where(x => locationIds.Contains(x.LocationId));
+
+            var overrideDetails = await overrideDetailsQuery
                 .Select(x => new
                 {
                     x.RequestOverrideId,
@@ -98,7 +137,7 @@ namespace CateringApi.Repositories.Implementations
                 })
                 .ToListAsync();
 
-            decimal monthOrderedQty = 0;
+            decimal orderedQty = 0;
             var effectiveRows = new List<DashboardEffectiveRow>();
 
             foreach (var req in monthRequests)
@@ -117,7 +156,10 @@ namespace CateringApi.Repositories.Implementations
                             Qty = x.Qty
                         });
 
-                for (var date = monthStart; date <= monthEnd; date = date.AddDays(1))
+                if (!reqBaseRows.Any())
+                    continue;
+
+                for (var date = fromDate; date <= toDate; date = date.AddDays(1))
                 {
                     if (date < req.FromDate.Date || date > req.ToDate.Date)
                         continue;
@@ -171,7 +213,7 @@ namespace CateringApi.Repositories.Implementations
 
                     foreach (var row in effectiveDetailRows.Values)
                     {
-                        monthOrderedQty += row.Qty;
+                        orderedQty += row.Qty;
 
                         effectiveRows.Add(new DashboardEffectiveRow
                         {
@@ -227,45 +269,89 @@ namespace CateringApi.Repositories.Implementations
                 .OrderByDescending(x => x.TotalQty)
                 .ToList();
 
-            var todayCount = await _context.QrScanLog
-                .Where(x => x.IsAllowed && x.ScanDate == today)
-                .CountAsync();
+            var todayScanQuery = _context.QrScanLog
+                .Where(x => x.IsAllowed && x.ScanDate == today);
 
-            var yesterdayCount = await _context.QrScanLog
-                .Where(x => x.IsAllowed && x.ScanDate == yesterday)
-                .CountAsync();
+            var yesterdayScanQuery = _context.QrScanLog
+                .Where(x => x.IsAllowed && x.ScanDate == yesterday);
 
-            var latestUsedQRs = await (
+            var qrScanQuery = _context.QrScanLog
+                .Where(x => x.IsAllowed &&
+                            x.ScanDate >= fromDate &&
+                            x.ScanDate <= toDate);
+
+            if (hasCompanyFilter)
+            {
+                var companyQrIds = await _context.QrCodeRequest
+                    .Where(x => companyIds.Contains(x.CompanyId))
+                    .Select(x => x.Id)
+                    .ToListAsync();
+
+                todayScanQuery = todayScanQuery.Where(x => companyQrIds.Contains(x.QrCodeRequestId));
+                yesterdayScanQuery = yesterdayScanQuery.Where(x => companyQrIds.Contains(x.QrCodeRequestId));
+                qrScanQuery = qrScanQuery.Where(x => companyQrIds.Contains(x.QrCodeRequestId));
+            }
+
+            if (hasSessionFilter)
+            {
+                todayScanQuery = todayScanQuery.Where(x => sessionIds.Contains(x.SessionId));
+                yesterdayScanQuery = yesterdayScanQuery.Where(x => sessionIds.Contains(x.SessionId));
+                qrScanQuery = qrScanQuery.Where(x => sessionIds.Contains(x.SessionId));
+            }
+
+            var todayCount = await todayScanQuery.CountAsync();
+            var yesterdayCount = await yesterdayScanQuery.CountAsync();
+
+            var latestUsedQRsQuery =
                 from log in _context.QrScanLog
                 join qr in _context.QrCodeRequest on log.QrCodeRequestId equals qr.Id
                 join c in _context.CompanyMaster on qr.CompanyId equals c.Id
                 join s in _context.Session on log.SessionId equals s.Id
-                where log.IsAllowed
-                orderby log.ScanDateTime descending
-                select new LatestQrDTO
-                {
-                    UniqueCode = log.UniqueCode ?? "",
-                    CompanyName = c.CompanyName ?? "",
-                    UsedDate = log.ScanDateTime,
-                    SessionName = s.SessionName ?? ""
-                }
-            )
-            .Take(4)
-            .ToListAsync();
+                where log.IsAllowed &&
+                      log.ScanDate >= fromDate &&
+                      log.ScanDate <= toDate
+                select new { log, qr, c, s };
 
-            var monthRedeemMap = await (
+            if (hasCompanyFilter)
+                latestUsedQRsQuery = latestUsedQRsQuery.Where(x => companyIds.Contains(x.qr.CompanyId));
+
+            if (hasSessionFilter)
+                latestUsedQRsQuery = latestUsedQRsQuery.Where(x => sessionIds.Contains(x.log.SessionId));
+
+            var latestUsedQRs = await latestUsedQRsQuery
+                .OrderByDescending(x => x.log.ScanDateTime)
+                .Take(4)
+                .Select(x => new LatestQrDTO
+                {
+                    UniqueCode = x.log.UniqueCode ?? "",
+                    CompanyName = x.c.CompanyName ?? "",
+                    UsedDate = x.log.ScanDateTime,
+                    SessionName = x.s.SessionName ?? ""
+                })
+                .ToListAsync();
+
+            var redeemBaseQuery =
                 from log in _context.QrScanLog
                 join qr in _context.QrCodeRequest on log.QrCodeRequestId equals qr.Id
                 where log.IsAllowed &&
-                      log.ScanDate >= monthStart &&
-                      log.ScanDate <= monthEnd
-                group log by qr.CompanyId into g
-                select new
+                      log.ScanDate >= fromDate &&
+                      log.ScanDate <= toDate
+                select new { log, qr };
+
+            if (hasCompanyFilter)
+                redeemBaseQuery = redeemBaseQuery.Where(x => companyIds.Contains(x.qr.CompanyId));
+
+            if (hasSessionFilter)
+                redeemBaseQuery = redeemBaseQuery.Where(x => sessionIds.Contains(x.log.SessionId));
+
+            var monthRedeemMap = await redeemBaseQuery
+                .GroupBy(x => x.qr.CompanyId)
+                .Select(g => new
                 {
                     CompanyId = g.Key,
                     RedeemQty = g.Count()
-                }
-            ).ToDictionaryAsync(x => x.CompanyId, x => x.RedeemQty);
+                })
+                .ToDictionaryAsync(x => x.CompanyId, x => x.RedeemQty);
 
             foreach (var item in allCompanyWiseOrders)
             {
@@ -307,6 +393,9 @@ namespace CateringApi.Repositories.Implementations
                             CompanyId = req.CompanyId,
                             Qty = x.Qty
                         });
+
+                if (!reqBaseRows.Any())
+                    continue;
 
                 var effectiveDetailRows = reqBaseRows.ToDictionary(
                     x => x.Key,
@@ -374,7 +463,7 @@ namespace CateringApi.Repositories.Implementations
                 TodayOrderedQty = todayOrderedQty,
                 TodayRedeemedQty = todayRedeemedQty,
                 TodayPendingQty = todayPendingQty,
-                MonthOrderedQty = monthOrderedQty,
+                MonthOrderedQty = orderedQty,
                 MonthRedeemedQty = monthRedeemedQty,
                 MonthPendingQty = monthPendingQty,
                 TotalOrdersBySession = ordersBySession,
