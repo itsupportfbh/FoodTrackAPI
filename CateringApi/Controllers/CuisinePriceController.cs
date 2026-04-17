@@ -1,11 +1,13 @@
 ﻿using CateringApi.DTOs;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class CuisinePriceController : ControllerBase
     {
         private readonly ICuisinePriceRepository _repository;

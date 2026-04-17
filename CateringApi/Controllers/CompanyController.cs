@@ -1,12 +1,14 @@
 ﻿using CateringApi.DTOs.Common;
 using CateringApi.DTOs.Company;
 using CateringApi.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class CompanyController : ControllerBase
     {
         private readonly ICompanyRepository _repository;

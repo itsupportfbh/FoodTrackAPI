@@ -7,7 +7,7 @@ namespace CateringApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    //[Authorize]
+    [Authorize]
     public class DashboardController : ControllerBase
     {
         private readonly IDashboardRepository _dashboardRepository;
@@ -17,8 +17,8 @@ namespace CateringApi.Controllers
             _dashboardRepository = dashboardRepository;
         }
 
-        [HttpGet]
-        [HttpGet]
+
+        [HttpGet("GetDashboard")]
         public async Task<IActionResult> GetDashboard([FromQuery] DashboardFilterDTO filter)
         {
             var data = await _dashboardRepository.GetDashboardData(filter);
