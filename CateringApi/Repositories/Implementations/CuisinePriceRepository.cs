@@ -2,6 +2,7 @@
 using CateringApi.DTOs;
 using CateringApi.Repositories.Interfaces;
 using Dapper;
+using Microsoft.EntityFrameworkCore;
 using System.Data;
 
 namespace CateringApi.Repositories.Implementations
@@ -9,31 +10,35 @@ namespace CateringApi.Repositories.Implementations
     public class CuisinePriceRepository : ICuisinePriceRepository
     {
         private readonly DapperContext _context;
+        private readonly FoodDBContext _context1;
 
-        public CuisinePriceRepository(DapperContext context)
+        public CuisinePriceRepository(DapperContext context, FoodDBContext context1)
         {
             _context = context;
+            _context1 = context1;
         }
+
+        #region Session Based Methods
 
         public async Task<IEnumerable<CuisineRateViewModel>> GetAllCuisinesWithRatesAsync(int companyId, int sessionId)
         {
             using var con = _context.CreateConnection();
 
+            // Since price is now session based only, same session rate will be shown for all cuisines
             const string sql = @"
 SELECT
     c.Id AS CuisineId,
     c.CuisineName,
-    ISNULL(cp.Rate, 0) AS Rate,
-    cp.EffectiveFrom
+    ISNULL(sp.Rate, 0) AS Rate,
+    sp.EffectiveFrom
 FROM dbo.CompanyCuisineMap ccm
 INNER JOIN dbo.CuisineMaster c
     ON c.Id = ccm.CuisineId
    AND c.IsActive = 1
-LEFT JOIN dbo.CuisinePrice cp
-    ON cp.CuisineId = c.Id
-   AND cp.CompanyId = ccm.CompanyId
-   AND cp.SessionId = @SessionId
-   AND cp.IsActive = 1
+LEFT JOIN dbo.SessionPrice sp
+    ON sp.CompanyId = ccm.CompanyId
+   AND sp.SessionId = @SessionId
+   AND sp.IsActive = 1
 WHERE ccm.CompanyId = @CompanyId
 ORDER BY c.CuisineName;";
 
@@ -44,31 +49,37 @@ ORDER BY c.CuisineName;";
             });
         }
 
-        public async Task<IEnumerable<CuisineRateViewModel>> GetCuisineRatesByCompanySessionAsync(int companyId, int sessionId)
+        public async Task<SessionRateViewDto?> GetSessionRateAsync(int companyId, int sessionId)
         {
             using var con = _context.CreateConnection();
 
             const string sql = @"
-SELECT
-    cp.CuisineId,
-    c.CuisineName,
-    cp.Rate,
-    cp.EffectiveFrom
-FROM dbo.CuisinePrice cp
-INNER JOIN dbo.CuisineMaster c ON c.Id = cp.CuisineId
-WHERE cp.CompanyId = @CompanyId
-  AND cp.SessionId = @SessionId
-  AND cp.IsActive = 1
-ORDER BY c.CuisineName;";
+SELECT TOP 1
+    sp.Id,
+    sp.CompanyId,
+    sp.SessionId,
+    cm.CompanyName,
+    s.SessionName,
+    sp.Rate,
+    sp.EffectiveFrom
+FROM dbo.SessionPrice sp
+INNER JOIN dbo.CompanyMaster cm
+    ON cm.Id = sp.CompanyId
+INNER JOIN dbo.Session s
+    ON s.Id = sp.SessionId
+WHERE sp.CompanyId = @CompanyId
+  AND sp.SessionId = @SessionId
+  AND sp.IsActive = 1
+ORDER BY sp.EffectiveFrom DESC, sp.Id DESC;";
 
-            return await con.QueryAsync<CuisineRateViewModel>(sql, new
+            return await con.QueryFirstOrDefaultAsync<SessionRateViewDto>(sql, new
             {
                 CompanyId = companyId,
                 SessionId = sessionId
             });
         }
 
-        public async Task<bool> SaveBulkCuisinePricesAsync(BulkCuisinePriceSaveRequest request)
+        public async Task<bool> SaveSessionRateAsync(SessionRateSaveRequest request)
         {
             using var con = _context.CreateConnection();
 
@@ -79,74 +90,76 @@ ORDER BY c.CuisineName;";
 
             try
             {
-                foreach (var item in request.Rates)
-                {
-                    const string checkSql = @"
-SELECT Id, Rate, EffectiveFrom
-FROM dbo.CuisinePrice
+                const string existingSql = @"
+SELECT TOP 1 Id, Rate, EffectiveFrom
+FROM dbo.SessionPrice
 WHERE CompanyId = @CompanyId
   AND SessionId = @SessionId
-  AND CuisineId = @CuisineId
-  AND IsActive = 1;";
+  AND IsActive = 1
+ORDER BY Id DESC;";
 
-                    var existing = await con.QueryFirstOrDefaultAsync<CuisinePriceExistingDto>(
-                        checkSql,
-                        new
-                        {
-                            request.CompanyId,
-                            request.SessionId,
-                            item.CuisineId
-                        },
-                        tran);
-
-                    if (existing != null)
+                var existing = await con.QueryFirstOrDefaultAsync<SessionPriceExistingDto>(
+                    existingSql,
+                    new
                     {
-                        if (existing.Rate == item.Rate &&
-                            existing.EffectiveFrom.HasValue &&
-                            existing.EffectiveFrom.Value.Date == item.EffectiveFrom.Date)
-                            continue;
+                        request.CompanyId,
+                        request.SessionId
+                    },
+                    tran
+                );
 
-                        const string closeHistorySql = @"
-UPDATE dbo.CuisinePriceHistory
-SET EffectiveTo = DATEADD(SECOND, -1, @NewEffectiveFrom)
+                if (existing != null)
+                {
+                    if (existing.Rate == request.Rate &&
+                        existing.EffectiveFrom.HasValue &&
+                        existing.EffectiveFrom.Value.Date == request.EffectiveFrom.Date)
+                    {
+                        tran.Commit();
+                        return true;
+                    }
+
+                    const string closeHistorySql = @"
+UPDATE dbo.SessionPriceHistory
+SET EffectiveTo = DATEADD(DAY, -1, @EffectiveFrom)
 WHERE PriceId = @PriceId
   AND EffectiveTo IS NULL;";
 
-                        await con.ExecuteAsync(
-                            closeHistorySql,
-                            new
-                            {
-                                PriceId = existing.Id,
-                                NewEffectiveFrom = item.EffectiveFrom
-                            },
-                            tran);
+                    await con.ExecuteAsync(
+                        closeHistorySql,
+                        new
+                        {
+                            EffectiveFrom = request.EffectiveFrom,
+                            PriceId = existing.Id
+                        },
+                        tran
+                    );
 
-                        const string updateSql = @"
-UPDATE dbo.CuisinePrice
+                    const string updateSql = @"
+UPDATE dbo.SessionPrice
 SET Rate = @Rate,
     EffectiveFrom = @EffectiveFrom,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = GETDATE()
 WHERE Id = @Id;";
 
-                        await con.ExecuteAsync(
-                            updateSql,
-                            new
-                            {
-                                Id = existing.Id,
-                                Rate = item.Rate,
-                                EffectiveFrom = item.EffectiveFrom,
-                                UpdatedBy = request.UpdatedBy
-                            },
-                            tran);
+                    await con.ExecuteAsync(
+                        updateSql,
+                        new
+                        {
+                            Id = existing.Id,
+                            request.Rate,
+                            request.EffectiveFrom,
+                            request.UpdatedBy
+                        },
+                        tran
+                    );
 
-                        const string insertHistorySql = @"
-INSERT INTO dbo.CuisinePriceHistory
+                    const string insertHistorySql = @"
+INSERT INTO dbo.SessionPriceHistory
 (
     PriceId,
     CompanyId,
     SessionId,
-    CuisineId,
     Rate,
     EffectiveFrom,
     EffectiveTo,
@@ -159,7 +172,6 @@ VALUES
     @PriceId,
     @CompanyId,
     @SessionId,
-    @CuisineId,
     @Rate,
     @EffectiveFrom,
     NULL,
@@ -168,28 +180,27 @@ VALUES
     GETDATE()
 );";
 
-                        await con.ExecuteAsync(
-                            insertHistorySql,
-                            new
-                            {
-                                PriceId = existing.Id,
-                                request.CompanyId,
-                                request.SessionId,
-                                item.CuisineId,
-                                Rate = item.Rate,
-                                EffectiveFrom = item.EffectiveFrom,
-                                CreatedBy = request.UpdatedBy
-                            },
-                            tran);
-                    }
-                    else
-                    {
-                        const string insertSql = @"
-INSERT INTO dbo.CuisinePrice
+                    await con.ExecuteAsync(
+                        insertHistorySql,
+                        new
+                        {
+                            PriceId = existing.Id,
+                            request.CompanyId,
+                            request.SessionId,
+                            request.Rate,
+                            request.EffectiveFrom,
+                            CreatedBy = request.UpdatedBy
+                        },
+                        tran
+                    );
+                }
+                else
+                {
+                    const string insertSql = @"
+INSERT INTO dbo.SessionPrice
 (
     CompanyId,
     SessionId,
-    CuisineId,
     Rate,
     EffectiveFrom,
     IsActive,
@@ -200,7 +211,6 @@ VALUES
 (
     @CompanyId,
     @SessionId,
-    @CuisineId,
     @Rate,
     @EffectiveFrom,
     1,
@@ -210,26 +220,25 @@ VALUES
 
 SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
-                        var newPriceId = await con.ExecuteScalarAsync<int>(
-                            insertSql,
-                            new
-                            {
-                                request.CompanyId,
-                                request.SessionId,
-                                item.CuisineId,
-                                Rate = item.Rate,
-                                EffectiveFrom = item.EffectiveFrom,
-                                CreatedBy = request.UpdatedBy
-                            },
-                            tran);
+                    var newId = await con.ExecuteScalarAsync<int>(
+                        insertSql,
+                        new
+                        {
+                            request.CompanyId,
+                            request.SessionId,
+                            request.Rate,
+                            request.EffectiveFrom,
+                            CreatedBy = request.UpdatedBy
+                        },
+                        tran
+                    );
 
-                        const string insertHistorySql = @"
-INSERT INTO dbo.CuisinePriceHistory
+                    const string insertHistorySql = @"
+INSERT INTO dbo.SessionPriceHistory
 (
     PriceId,
     CompanyId,
     SessionId,
-    CuisineId,
     Rate,
     EffectiveFrom,
     EffectiveTo,
@@ -242,7 +251,6 @@ VALUES
     @PriceId,
     @CompanyId,
     @SessionId,
-    @CuisineId,
     @Rate,
     @EffectiveFrom,
     NULL,
@@ -251,20 +259,19 @@ VALUES
     GETDATE()
 );";
 
-                        await con.ExecuteAsync(
-                            insertHistorySql,
-                            new
-                            {
-                                PriceId = newPriceId,
-                                request.CompanyId,
-                                request.SessionId,
-                                item.CuisineId,
-                                Rate = item.Rate,
-                                EffectiveFrom = item.EffectiveFrom,
-                                CreatedBy = request.UpdatedBy
-                            },
-                            tran);
-                    }
+                    await con.ExecuteAsync(
+                        insertHistorySql,
+                        new
+                        {
+                            PriceId = newId,
+                            request.CompanyId,
+                            request.SessionId,
+                            request.Rate,
+                            request.EffectiveFrom,
+                            CreatedBy = request.UpdatedBy
+                        },
+                        tran
+                    );
                 }
 
                 tran.Commit();
@@ -281,32 +288,31 @@ VALUES
         {
             using var con = _context.CreateConnection();
 
+            // Since history is now session based only, cuisineId is ignored.
+            // Returning session history and mapping Cuisine columns with default values.
             const string sql = @"
 SELECT
     h.Id,
     h.PriceId,
     h.CompanyId,
     h.SessionId,
-    h.CuisineId,
-    c.CuisineName,
+    0 AS CuisineId,
+    '' AS CuisineName,
     h.Rate,
     h.EffectiveFrom,
     h.EffectiveTo,
     h.ActionType,
     h.CreatedBy,
     h.CreatedDate
-FROM dbo.CuisinePriceHistory h
-INNER JOIN dbo.CuisineMaster c ON c.Id = h.CuisineId
+FROM dbo.SessionPriceHistory h
 WHERE h.CompanyId = @CompanyId
   AND h.SessionId = @SessionId
-  AND h.CuisineId = @CuisineId
 ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
 
             return await con.QueryAsync<CuisinePriceHistoryDto>(sql, new
             {
                 CompanyId = companyId,
-                SessionId = sessionId,
-                CuisineId = cuisineId
+                SessionId = sessionId
             });
         }
 
@@ -314,12 +320,12 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
         {
             using var con = _context.CreateConnection();
 
+            // Cuisine is no longer used. Same session rate applies.
             const string sql = @"
 SELECT TOP 1 h.Rate
-FROM dbo.CuisinePriceHistory h
+FROM dbo.SessionPriceHistory h
 WHERE h.CompanyId = @CompanyId
   AND h.SessionId = @SessionId
-  AND h.CuisineId = @CuisineId
   AND h.EffectiveFrom <= @OrderDate
   AND (h.EffectiveTo IS NULL OR h.EffectiveTo >= @OrderDate)
 ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
@@ -328,13 +334,43 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
             {
                 CompanyId = companyId,
                 SessionId = sessionId,
-                CuisineId = cuisineId,
                 OrderDate = orderDate
             });
         }
+
+        public async Task<List<PriceListDto>> GetPriceList()
+        {
+            var query = from h in _context1.SessionPriceHistory
+                        join c in _context1.CompanyMaster on h.CompanyId equals c.Id
+                        join s in _context1.Session on h.SessionId equals s.Id
+                        join p in _context1.SessionPrice on h.PriceId equals p.Id into priceJoin
+                        from p in priceJoin.DefaultIfEmpty()
+                        orderby h.CreatedDate descending
+                        select new PriceListDto
+                        {
+                            Id = h.Id,
+                            PriceId = h.PriceId,
+                            CompanyId = h.CompanyId,
+                            CompanyName = c.CompanyName,
+                            SessionId = h.SessionId,
+                            SessionName = s.SessionName,
+                            CuisineId = 0,
+                            CuisineName = string.Empty,
+                            Rate = h.Rate,
+                            EffectiveFrom = h.EffectiveFrom,
+                            EffectiveTo = h.EffectiveTo,
+                            ActionType = h.ActionType,
+                            IsActive = p != null && p.IsActive,
+                            IsCurrent = p != null && p.IsActive
+                        };
+
+            return await query.ToListAsync();
+        }
+
+        #endregion
     }
 
-    public class CuisinePriceExistingDto
+    public class SessionPriceExistingDto
     {
         public int Id { get; set; }
         public decimal Rate { get; set; }
