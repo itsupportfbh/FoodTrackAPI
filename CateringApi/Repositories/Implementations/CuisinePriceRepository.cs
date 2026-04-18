@@ -372,9 +372,8 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
             const string sql = @"
 SELECT
     s.Id,
-    s.SessionName,
-    s.FromTime,
-    s.ToTime
+    s.SessionName
+
 FROM dbo.CompanySessionMap csm
 INNER JOIN dbo.[Session] s ON s.Id = csm.SessionId
 WHERE csm.CompanyId = @CompanyId
