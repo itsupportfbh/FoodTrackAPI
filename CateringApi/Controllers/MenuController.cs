@@ -8,7 +8,7 @@ namespace CateringApi.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
+    
     public class MenuController : ControllerBase
     {
         private readonly IMenuRepository _repository;
@@ -52,6 +52,35 @@ namespace CateringApi.Controllers
 
             var result = await _repository.GetMenuByMonthYearAsync(month, year);
             return Ok(result);
+        }
+        [HttpGet("by-month-year")]
+        public async Task<IActionResult> GetByMonthYear(int month, int year)
+        {
+            var result = await _repository.GetMenuByMonthYearAsync(month, year);
+            return Ok(result);
+        }
+
+        [HttpGet("by-date")]
+        public async Task<IActionResult> GetByDate(DateTime menuDate)
+        {
+            var result = await _repository.GetMenuByDateAsync(menuDate);
+            return Ok(result);
+        }
+
+        [HttpGet("download-pdf")]
+        public async Task<IActionResult> DownloadMenuPdf(DateTime menuDate)
+        {
+            var pdf = await _repository.GenerateMenuPdfAsync(menuDate);
+            var fileName = $"Menu_{menuDate:yyyyMMdd}.pdf";
+
+            return File(pdf, "application/pdf", fileName);
+        }
+        [HttpGet("download-monthly-pdf")]
+        public async Task<IActionResult> DownloadMonthlyMenuPdf(int month, int year)
+        {
+            var pdfBytes = await _repository.GenerateMonthlyMenuPdfAsync(month, year);
+            var fileName = $"Monthly_Menu_{year}_{month:D2}.pdf";
+            return File(pdfBytes, "application/pdf", fileName);
         }
     }
 }
