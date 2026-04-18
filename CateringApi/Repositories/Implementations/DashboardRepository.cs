@@ -508,7 +508,9 @@ namespace CateringApi.Repositories.Implementations
                 .ToListAsync();
 
             // STEP 4 - add here
+            
             decimal totalPrice = 0;
+            var sessionTotalMap = new Dictionary<int, decimal>();
 
             foreach (var row in effectiveRows)
             {
@@ -522,9 +524,28 @@ namespace CateringApi.Repositories.Implementations
 
                 if (matchedRate != null)
                 {
-                    totalPrice += row.Qty * matchedRate.Rate;
+                    var rowTotal = row.Qty * matchedRate.Rate;
+
+                    // overall total
+                    totalPrice += rowTotal;
+
+                    // session-wise total
+                    if (!sessionTotalMap.ContainsKey(row.SessionId))
+                        sessionTotalMap[row.SessionId] = 0;
+
+                    sessionTotalMap[row.SessionId] += rowTotal;
                 }
             }
+
+            var sessionPriceBreakdown = sessionTotalMap
+    .Select(x => new SessionPriceBreakdownDTO
+    {
+        SessionId = x.Key,
+        SessionName = sessionMaster.FirstOrDefault(s => s.Id == x.Key)?.SessionName ?? "",
+        TotalPrice = x.Value
+    })
+    .OrderBy(x => x.SessionName)
+    .ToList();
 
 
             return new DashboardDTO
@@ -544,7 +565,8 @@ namespace CateringApi.Repositories.Implementations
                 TotalcompanyWiseOrders = companyWiseOrders,
                 TotallatestUsedQRs = latestUsedQRs,
                 CurrentSessionPrices = currentSessionPrices,
-                TotalPrice = totalPrice
+                TotalPrice = totalPrice,
+                SessionPriceBreakdown = sessionPriceBreakdown
             };
         }
 
@@ -557,6 +579,13 @@ namespace CateringApi.Repositories.Implementations
             public int CompanyId { get; set; }
             public decimal Qty { get; set; }
             public DateTime OrderDate { get; set; }
+        }
+
+        public class SessionPriceBreakdownDTO
+        {
+            public int SessionId { get; set; }
+            public string SessionName { get; set; }
+            public decimal TotalPrice { get; set; }
         }
     }
 }

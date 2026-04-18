@@ -1,6 +1,7 @@
 ﻿using CateringApi.DTOs.Company;
 using CateringApi.DTOs.QR;
 using CateringApi.DTOs.Session;
+using static CateringApi.Repositories.Implementations.DashboardRepository;
 
 namespace CateringApi.DTOs.Dashboard
 {
@@ -21,6 +22,7 @@ namespace CateringApi.DTOs.Dashboard
         public decimal MonthPendingQty { get; set; }
         public decimal TotalPrice { get; set; }
 
+        public List<SessionPriceBreakdownDTO> SessionPriceBreakdown { get; set; }
         public List<SessionOrderDTO> TotalOrdersBySession { get; set; } = new();
         public List<CompanyOrderDTO> TotalcompanyWiseOrders { get; set; } = new();
         public List<LatestQrDTO> TotallatestUsedQRs { get; set; } = new();
