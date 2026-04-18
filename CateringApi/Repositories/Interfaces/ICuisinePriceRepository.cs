@@ -1,4 +1,5 @@
 ﻿using CateringApi.DTOs;
+using CateringApi.Repositories.Implementations;
 
 namespace CateringApi.Repositories.Interfaces
 {
@@ -11,5 +12,6 @@ namespace CateringApi.Repositories.Interfaces
 
         Task<decimal> GetApplicableCuisineRateAsync(int companyId, int sessionId, int cuisineId, DateTime orderDate);
         Task<List<PriceListDto>> GetPriceList();
+        Task<IEnumerable<SessionDropdownDto>> GetAssignedSessionsByCompanyIdAsync(int companyId);
     }
 }

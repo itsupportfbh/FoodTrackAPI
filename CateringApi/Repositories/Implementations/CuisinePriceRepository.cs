@@ -367,9 +367,35 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
                 .ToListAsync();
         }
 
+        public async Task<IEnumerable<SessionDropdownDto>> GetAssignedSessionsByCompanyIdAsync(int companyId)
+        {
+            const string sql = @"
+SELECT
+    s.Id,
+    s.SessionName,
+    s.FromTime,
+    s.ToTime
+FROM dbo.CompanySessionMap csm
+INNER JOIN dbo.[Session] s ON s.Id = csm.SessionId
+WHERE csm.CompanyId = @CompanyId
+ORDER BY s.Id;";
+
+            using var con = _context.CreateConnection();
+            return await con.QueryAsync<SessionDropdownDto>(sql, new { CompanyId = companyId });
+        }
+
         #endregion
     }
 
+ 
+        public class SessionDropdownDto
+        {
+            public int Id { get; set; }
+            public string SessionName { get; set; }
+            public string? FromTime { get; set; }
+            public string? ToTime { get; set; }
+        }
+    
     public class SessionPriceExistingDto
     {
         public int Id { get; set; }
