@@ -1,4 +1,5 @@
 ﻿using CateringApi.DTOs;
+using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -61,6 +62,28 @@ namespace CateringApi.Controllers
         {
             var result = await _repository.GetPriceList();
             return Ok(result);
+        }
+
+        [HttpGet("GetAssignedSessionsByCompanyId/{companyId}")]
+        public async Task<IActionResult> GetAssignedSessionsByCompanyId(int companyId)
+        {
+            try
+            {
+                var data = await _repository.GetAssignedSessionsByCompanyIdAsync(companyId);
+                return Ok(new
+                {
+                    status = true,
+                    data
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    status = false,
+                    message = ex.Message
+                });
+            }
         }
     }
 }
