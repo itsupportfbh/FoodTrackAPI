@@ -328,7 +328,7 @@ ORDER BY SessionName, CuisineName, SetName;";
 
                     page.Header().Column(col =>
                     {
-                        col.Item().Text("FoodTrack Monthly Menu")
+                        col.Item().Text("Catering Solutions Monthly Menu")
                             .FontSize(20)
                             .Bold()
                             .FontColor("#6F3C2F");
