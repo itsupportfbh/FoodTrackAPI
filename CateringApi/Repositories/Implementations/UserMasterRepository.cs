@@ -122,7 +122,7 @@ VALUES
     @UserName,
     @Email,
     @PasswordHash,
-    2,
+    4,
     @CreatedBy,
     @CreatedDate,
     @UpdatedBy,
