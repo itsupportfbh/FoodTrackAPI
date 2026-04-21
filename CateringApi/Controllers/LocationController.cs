@@ -63,7 +63,7 @@ namespace CateringApi.Controllers
 
 
 
-        [HttpDelete("UpdateLocation")]
+        [HttpDelete("DeleteLocation")]
         public async Task<IActionResult> DeleteLocation(int id)
         {
             await _repository.DeleteLocation(id);
