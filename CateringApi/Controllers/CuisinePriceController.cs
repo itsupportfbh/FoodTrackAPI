@@ -85,5 +85,40 @@ namespace CateringApi.Controllers
                 });
             }
         }
+        [HttpGet("GetCompanyPlanRates")]
+        public async Task<IActionResult> GetCompanyPlanRates(int companyId)
+        {
+            var result = await _repository.GetCompanyPlanRatesAsync(companyId);
+            return Ok(new { success = true, data = result });
+        }
+
+        [HttpPost("SaveCompanyPlanRates")]
+        public async Task<IActionResult> SaveCompanyPlanRates([FromBody] CompanyPlanRateSaveRequest request)
+        {
+            if (request == null || request.CompanyId <= 0)
+                return BadRequest(new { message = "Invalid company" });
+
+            if (string.IsNullOrWhiteSpace(request.PlanType))
+                return BadRequest(new { message = "Plan type is required" });
+
+            if (request.SessionRates == null || !request.SessionRates.Any())
+                return BadRequest(new { message = "Session rates are required" });
+
+            var allowedPlans = new[] { "Basic", "Standard", "Premium" };
+            if (!allowedPlans.Contains(request.PlanType))
+                return BadRequest(new { message = "Invalid plan type" });
+
+            var invalidRate = request.SessionRates.FirstOrDefault(x => x.Rate <= 0);
+            if (invalidRate != null)
+                return BadRequest(new { message = "All rates must be greater than zero" });
+
+            var result = await _repository.SaveCompanyPlanRatesAsync(request);
+
+            return Ok(new
+            {
+                success = result,
+                message = result ? "Plan rates saved successfully" : "Save failed"
+            });
+        }
     }
 }
