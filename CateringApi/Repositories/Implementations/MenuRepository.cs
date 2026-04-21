@@ -3,12 +3,14 @@ using CateringApi.DTOs;
 using CateringApi.DTOs.Menu;
 using CateringApi.Repositories.Interfaces;
 using Dapper;
-using System.Data;
-using System.Globalization;
-using System.Reflection.Metadata;
+using OfficeOpenXml;
+using OfficeOpenXml.Style;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
+using System.Data;
+using System.Globalization;
+using System.Reflection.Metadata;
 
 namespace CateringApi.Repositories.Implementations
 {
@@ -387,6 +389,110 @@ ORDER BY SessionName, CuisineName, SetName;";
             }).GeneratePdf();
 
             return pdfBytes;
+        }
+
+        public async Task<byte[]> DownloadPreviousMenuTemplateAsync(int month, int year)
+        {
+            ExcelPackage.License.SetNonCommercialOrganization("CateringApi");
+
+            using var con = _context.CreateConnection();
+
+            const string sql = @"
+SELECT
+    CONVERT(VARCHAR(10), MenuDate, 23) AS [Date],
+    SessionName,
+    CuisineName,
+    SetName,
+    Item1,
+    Item2,
+    Item3,
+    Item4,
+    Notes
+FROM dbo.MenuUpload
+WHERE MenuMonth = @Month
+  AND MenuYear = @Year
+  AND IsActive = 1
+ORDER BY SessionName, MenuDate, CuisineName, SetName;";
+
+            var rows = (await con.QueryAsync<MenuUploadResponseDto>(sql, new
+            {
+                Month = month,
+                Year = year
+            })).ToList();
+
+            if (!rows.Any())
+                return Array.Empty<byte>();
+
+            using var package = new ExcelPackage();
+
+            var groupedBySession = rows
+                .GroupBy(x => string.IsNullOrWhiteSpace(x.SessionName) ? "Session" : x.SessionName.Trim())
+                .ToList();
+
+            foreach (var sessionGroup in groupedBySession)
+            {
+                var sheetName = sessionGroup.Key.Length > 31
+                    ? sessionGroup.Key.Substring(0, 31)
+                    : sessionGroup.Key;
+
+                var worksheet = package.Workbook.Worksheets.Add(sheetName);
+
+                worksheet.Cells[1, 1].Value = "Date";
+                worksheet.Cells[1, 2].Value = "SessionName";
+                worksheet.Cells[1, 3].Value = "CuisineName";
+                worksheet.Cells[1, 4].Value = "SetName";
+                worksheet.Cells[1, 5].Value = "Item1";
+                worksheet.Cells[1, 6].Value = "Item2";
+                worksheet.Cells[1, 7].Value = "Item3";
+                worksheet.Cells[1, 8].Value = "Item4";
+                worksheet.Cells[1, 9].Value = "Notes";
+
+                using (var headerRange = worksheet.Cells[1, 1, 1, 9])
+                {
+                    headerRange.Style.Font.Bold = true;
+                    headerRange.Style.Font.Color.SetColor(System.Drawing.Color.White);
+                    headerRange.Style.Fill.PatternType = ExcelFillStyle.Solid;
+                    headerRange.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(166, 94, 46));
+                    headerRange.Style.HorizontalAlignment = ExcelHorizontalAlignment.Center;
+                    headerRange.Style.VerticalAlignment = ExcelVerticalAlignment.Center;
+                }
+
+                int rowIndex = 2;
+
+                foreach (var item in sessionGroup)
+                {
+                    worksheet.Cells[rowIndex, 1].Value = item.Date;
+                    worksheet.Cells[rowIndex, 2].Value = item.SessionName;
+                    worksheet.Cells[rowIndex, 3].Value = item.CuisineName;
+                    worksheet.Cells[rowIndex, 4].Value = item.SetName;
+                    worksheet.Cells[rowIndex, 5].Value = item.Item1;
+                    worksheet.Cells[rowIndex, 6].Value = item.Item2;
+                    worksheet.Cells[rowIndex, 7].Value = item.Item3;
+                    worksheet.Cells[rowIndex, 8].Value = item.Item4;
+                    worksheet.Cells[rowIndex, 9].Value = item.Notes;
+                    rowIndex++;
+                }
+
+                using (var allRange = worksheet.Cells[1, 1, rowIndex - 1, 9])
+                {
+                    allRange.Style.Border.Top.Style = ExcelBorderStyle.Thin;
+                    allRange.Style.Border.Bottom.Style = ExcelBorderStyle.Thin;
+                    allRange.Style.Border.Left.Style = ExcelBorderStyle.Thin;
+                    allRange.Style.Border.Right.Style = ExcelBorderStyle.Thin;
+                }
+
+                worksheet.Column(1).Width = 14;
+                worksheet.Column(2).Width = 18;
+                worksheet.Column(3).Width = 20;
+                worksheet.Column(4).Width = 16;
+                worksheet.Column(5).Width = 24;
+                worksheet.Column(6).Width = 24;
+                worksheet.Column(7).Width = 24;
+                worksheet.Column(8).Width = 20;
+                worksheet.Column(9).Width = 22;
+            }
+
+            return package.GetAsByteArray();
         }
     }
 }

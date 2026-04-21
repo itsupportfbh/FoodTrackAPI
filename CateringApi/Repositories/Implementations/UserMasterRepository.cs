@@ -38,14 +38,13 @@ FROM UserMaster um
 INNER JOIN CompanyMaster cm ON cm.Id = um.CompanyId
 INNER JOIN RoleMaster rm ON rm.Id = um.RoleId
 WHERE 
-    (
-        @CurrentRoleId = 1
-        OR
-        (
-            @CurrentRoleId = 2
-            AND um.CompanyId = @CurrentCompanyId
-        )
-    )
+(
+    @CurrentRoleId = 1
+    OR
+    (@CurrentRoleId = 2 AND um.CompanyId = @currentCompanyId)
+    OR
+    (@CurrentRoleId = 4 AND um.Id = @currentUserId)   -- ✅ THIS LINE ADDED
+)
 ORDER BY um.Id DESC;";
 
             using var con = _context.CreateConnection();

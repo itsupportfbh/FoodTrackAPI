@@ -10,5 +10,6 @@ namespace CateringApi.Repositories.Interfaces
         Task<List<MenuUploadResponseDto>> GetMenuByDateAsync(DateTime menuDate);
         Task<byte[]> GenerateMenuPdfAsync(DateTime menuDate);
         Task<byte[]> GenerateMonthlyMenuPdfAsync(int month, int year);
+        Task<byte[]> DownloadPreviousMenuTemplateAsync(int month, int year);
     }
 }
