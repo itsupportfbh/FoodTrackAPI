@@ -1,5 +1,4 @@
 ﻿using CateringApi.DTOs;
-using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,61 +17,15 @@ namespace CateringApi.Controllers
             _repository = repository;
         }
 
-        [HttpGet("all-cuisines-with-rates")]
-        public async Task<IActionResult> GetAllCuisinesWithRates([FromQuery] int companyId, [FromQuery] int sessionId)
+        [HttpGet("GetAllSessions")]
+        public async Task<IActionResult> GetAllSessions()
         {
             try
             {
-                var data = await _repository.GetAllCuisinesWithRatesAsync(companyId, sessionId);
-                return Ok(new { success = true, data });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { success = false, message = ex.Message });
-            }
-        }
-
-        [HttpPost("save-bulk")]
-        public async Task<IActionResult> SaveSessionRate([FromBody] SessionRateSaveRequest request)
-        {
-            var result = await _repository.SaveSessionRateAsync(request);
-
-            return Ok(new
-            {
-                success = result,
-                message = "Session price saved successfully"
-            });
-        }
-
-        [HttpGet("history")]
-        public async Task<IActionResult> GetHistory([FromQuery] int companyId, [FromQuery] int sessionId, [FromQuery] int cuisineId)
-        {
-            try
-            {
-                var data = await _repository.GetCuisinePriceHistoryAsync(companyId, sessionId, cuisineId);
-                return Ok(new { success = true, data });
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { success = false, message = ex.Message });
-            }
-        }
-        [HttpGet("GetPriceList")]
-        public async Task<IActionResult> GetPriceList()
-        {
-            var result = await _repository.GetPriceList();
-            return Ok(result);
-        }
-
-        [HttpGet("GetAssignedSessionsByCompanyId/{companyId}")]
-        public async Task<IActionResult> GetAssignedSessionsByCompanyId(int companyId)
-        {
-            try
-            {
-                var data = await _repository.GetAssignedSessionsByCompanyIdAsync(companyId);
+                var data = await _repository.GetAllSessionsAsync();
                 return Ok(new
                 {
-                    status = true,
+                    success = true,
                     data
                 });
             }
@@ -80,45 +33,85 @@ namespace CateringApi.Controllers
             {
                 return BadRequest(new
                 {
-                    status = false,
+                    success = false,
                     message = ex.Message
                 });
             }
         }
-        [HttpGet("GetCompanyPlanRates")]
-        public async Task<IActionResult> GetCompanyPlanRates(int companyId)
+
+        [HttpGet("GetDefaultPlanRates")]
+        public async Task<IActionResult> GetDefaultPlanRates()
         {
-            var result = await _repository.GetCompanyPlanRatesAsync(companyId);
-            return Ok(new { success = true, data = result });
+            try
+            {
+                var result = await _repository.GetDefaultPlanRatesAsync();
+                return Ok(new
+                {
+                    success = true,
+                    data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    message = ex.Message
+                });
+            }
         }
 
-        [HttpPost("SaveCompanyPlanRates")]
-        public async Task<IActionResult> SaveCompanyPlanRates([FromBody] CompanyPlanRateSaveRequest request)
+        [HttpPost("SaveDefaultPlanRatesBulk")]
+        public async Task<IActionResult> SaveDefaultPlanRatesBulk([FromBody] DefaultPlanBulkSaveRequest request)
         {
-            if (request == null || request.CompanyId <= 0)
-                return BadRequest(new { message = "Invalid company" });
-
-            if (string.IsNullOrWhiteSpace(request.PlanType))
-                return BadRequest(new { message = "Plan type is required" });
-
-            if (request.SessionRates == null || !request.SessionRates.Any())
-                return BadRequest(new { message = "Session rates are required" });
+            if (request == null || request.Plans == null || !request.Plans.Any())
+                return BadRequest(new { message = "Invalid request" });
 
             var allowedPlans = new[] { "Basic", "Standard", "Premium" };
-            if (!allowedPlans.Contains(request.PlanType))
-                return BadRequest(new { message = "Invalid plan type" });
 
-            var invalidRate = request.SessionRates.FirstOrDefault(x => x.Rate <= 0);
-            if (invalidRate != null)
-                return BadRequest(new { message = "All rates must be greater than zero" });
+            foreach (var plan in request.Plans)
+            {
+                if (string.IsNullOrWhiteSpace(plan.PlanType))
+                    return BadRequest(new { message = "Plan type is required" });
 
-            var result = await _repository.SaveCompanyPlanRatesAsync(request);
+                if (!allowedPlans.Contains(plan.PlanType))
+                    return BadRequest(new { message = $"Invalid plan type: {plan.PlanType}" });
+
+                if (plan.SessionRates == null || !plan.SessionRates.Any())
+                    return BadRequest(new { message = $"Session rates are required for {plan.PlanType}" });
+
+                if (plan.SessionRates.Any(x => x.Rate <= 0))
+                    return BadRequest(new { message = $"All rates must be greater than zero for {plan.PlanType}" });
+            }
+
+            var result = await _repository.SaveDefaultPlanRatesBulkAsync(request);
 
             return Ok(new
             {
                 success = result,
-                message = result ? "Plan rates saved successfully" : "Save failed"
+                message = result ? "Default plan rates saved successfully" : "Save failed"
             });
+        }
+
+        [HttpGet("GetPriceList")]
+        public async Task<IActionResult> GetPriceList()
+        {
+            var result = await _repository.GetPriceList();
+            return Ok(result);
+        }
+
+        [HttpGet("history")]
+        public async Task<IActionResult> GetHistory([FromQuery] int sessionId, [FromQuery] string planType)
+        {
+            try
+            {
+                var data = await _repository.GetDefaultPriceHistoryAsync(sessionId, planType);
+                return Ok(new { success = true, data });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
         }
     }
 }

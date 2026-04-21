@@ -6,15 +6,10 @@ namespace CateringApi.Repositories.Interfaces
 {
     public interface ICuisinePriceRepository
     {
-        Task<IEnumerable<CuisineRateViewModel>> GetAllCuisinesWithRatesAsync(int companyId, int sessionId);
-        Task<SessionRateViewDto?> GetSessionRateAsync(int companyId, int sessionId);
-        Task<bool> SaveSessionRateAsync(SessionRateSaveRequest request);
-        Task<IEnumerable<CuisinePriceHistoryDto>> GetCuisinePriceHistoryAsync(int companyId, int sessionId, int cuisineId);
-        Task<decimal> GetApplicableCuisineRateAsync(int companyId, int sessionId, int cuisineId, DateTime orderDate);
+        Task<IEnumerable<SessionDropdownDto>> GetAllSessionsAsync();
+        Task<bool> SaveDefaultPlanRatesBulkAsync(DefaultPlanBulkSaveRequest request);
+        Task<List<CompanyPlanRateViewDto>> GetDefaultPlanRatesAsync();
         Task<List<PriceListDto>> GetPriceList();
-        Task<IEnumerable<SessionDropdownDto>> GetAssignedSessionsByCompanyIdAsync(int companyId);
-
-        Task<bool> SaveCompanyPlanRatesAsync(CompanyPlanRateSaveRequest request);
-        Task<List<CompanyPlanRateViewDto>> GetCompanyPlanRatesAsync(int companyId);
+        Task<IEnumerable<CuisinePriceHistoryDto>> GetDefaultPriceHistoryAsync(int sessionId, string planType);
     }
 }
