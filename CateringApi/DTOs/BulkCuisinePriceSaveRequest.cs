@@ -59,21 +59,51 @@
 
     public class SessionRateViewDto
     {
-        public int? Id { get; set; }
+        public int Id { get; set; }
         public int CompanyId { get; set; }
         public int SessionId { get; set; }
         public string CompanyName { get; set; } = string.Empty;
         public string SessionName { get; set; } = string.Empty;
+        public string PlanType { get; set; } = string.Empty;
         public decimal Rate { get; set; }
         public DateTime? EffectiveFrom { get; set; }
     }
 
+
     public class SessionRateSaveRequest
+        {
+            public int CompanyId { get; set; }
+            public int SessionId { get; set; }
+            public string PlanType { get; set; } = string.Empty;
+            public decimal Rate { get; set; }
+            public DateTime EffectiveFrom { get; set; }
+            public int UpdatedBy { get; set; }
+        }
+    public class CompanyPlanRateSaveRequest
     {
         public int CompanyId { get; set; }
-        public int SessionId { get; set; }
-        public decimal Rate { get; set; }
+        public string PlanType { get; set; } = string.Empty;
         public DateTime EffectiveFrom { get; set; }
         public int UpdatedBy { get; set; }
+        public List<PlanSessionRateDto> SessionRates { get; set; } = new();
+    }
+
+    public class PlanSessionRateDto
+    {
+        public int SessionId { get; set; }
+        public decimal Rate { get; set; }
+    }
+    public class CompanyPlanRateViewDto
+    {
+        public string PlanType { get; set; } = string.Empty;
+        public DateTime? EffectiveFrom { get; set; }
+        public List<PlanSessionRateViewDto> SessionRates { get; set; } = new();
+    }
+
+    public class PlanSessionRateViewDto
+    {
+        public int SessionId { get; set; }
+        public string SessionName { get; set; } = string.Empty;
+        public decimal Rate { get; set; }
     }
 }
