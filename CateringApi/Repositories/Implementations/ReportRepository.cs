@@ -256,41 +256,42 @@ EffectiveRows AS
        AND rod.RequestDetailId = rd.Id
        AND rod.IsActive = 1
 
-    OUTER APPLY
+   OUTER APPLY
+(
+    SELECT TOP 1 x.Rate
+    FROM
     (
-        SELECT TOP 1 x.Rate
-        FROM
-        (
-            -- Current active session price
-            SELECT
-                sp.Rate,
-                CAST(sp.EffectiveFrom AS date) AS EffectiveFrom,
-                CAST('9999-12-31' AS date) AS EffectiveTo,
-                1 AS SortOrder
-            FROM dbo.SessionPrice sp
-            WHERE sp.CompanyId = rh.CompanyId
-              AND sp.SessionId = rd.SessionId
-              AND sp.IsActive = 1
-              AND CAST(sp.EffectiveFrom AS date) <= ds.ReportDate
+        -- Current active default session price
+        SELECT
+            sp.Rate,
+            CAST(sp.EffectiveFrom AS date) AS EffectiveFrom,
+            CAST('9999-12-31' AS date) AS EffectiveTo,
+            1 AS SortOrder
+        FROM dbo.SessionPrice sp
+        WHERE sp.CompanyId = 0
+          AND sp.SessionId = rd.SessionId
+          AND sp.PlanType = rh.PlanType
+          AND sp.IsActive = 1
+          AND CAST(sp.EffectiveFrom AS date) <= ds.ReportDate
 
-            UNION ALL
+        UNION ALL
 
-            -- Historical session price
-            SELECT
-                sph.Rate,
-                CAST(sph.EffectiveFrom AS date) AS EffectiveFrom,
-                CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date) AS EffectiveTo,
-                2 AS SortOrder
-            FROM dbo.SessionPriceHistory sph
-            WHERE sph.CompanyId = rh.CompanyId
-              AND sph.SessionId = rd.SessionId
-              AND ds.ReportDate BETWEEN CAST(sph.EffectiveFrom AS date)
-                                   AND CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date)
-        ) x
-        WHERE ds.ReportDate BETWEEN x.EffectiveFrom AND x.EffectiveTo
-        ORDER BY x.EffectiveFrom DESC, x.SortOrder ASC
-    ) ratePick
-
+        -- Historical default session price
+        SELECT
+            sph.Rate,
+            CAST(sph.EffectiveFrom AS date) AS EffectiveFrom,
+            CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date) AS EffectiveTo,
+            2 AS SortOrder
+        FROM dbo.SessionPriceHistory sph
+        WHERE sph.CompanyId = 0
+          AND sph.SessionId = rd.SessionId
+          AND sph.PlanType = rh.PlanType
+          AND ds.ReportDate BETWEEN CAST(sph.EffectiveFrom AS date)
+                               AND CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date)
+    ) x
+    WHERE ds.ReportDate BETWEEN x.EffectiveFrom AND x.EffectiveTo
+    ORDER BY x.EffectiveFrom DESC, x.SortOrder ASC
+) ratePick
     WHERE (@CompanyIdsCsv IS NULL OR rh.CompanyId IN
         (
             SELECT TRY_CAST(value AS INT)
