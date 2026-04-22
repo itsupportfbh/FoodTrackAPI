@@ -19,4 +19,13 @@
         public int UpdatedBy { get; set; }
         public DateTime UpdatedDate { get; set; }
     }
+    public class UserBulkUploadDto
+    {
+        public string UserName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public int CompanyId { get; set; }
+        public int RoleId { get; set; }
+        public bool IsActive { get; set; } = true;
+    }
+
 }

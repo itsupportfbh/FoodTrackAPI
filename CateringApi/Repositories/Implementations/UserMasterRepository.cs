@@ -1,9 +1,12 @@
-﻿using BCrypt.Net;
+﻿using System.Data;
+using BCrypt.Net;
 using CateringApi.Data;
 using CateringApi.DTOs;
 using CateringApi.DTOs.User;
 using CateringApi.Repositories.Interfaces;
 using Dapper;
+using Microsoft.AspNetCore.Http;
+using OfficeOpenXml;
 
 namespace CateringApi.Repositories.Implementations
 {
@@ -33,17 +36,17 @@ SELECT
     um.UpdatedDate,
     um.IsDelete,
     cm.CompanyName,
+    cm.CompanyCode,
     rm.RoleName
 FROM UserMaster um
 INNER JOIN CompanyMaster cm ON cm.Id = um.CompanyId
 INNER JOIN RoleMaster rm ON rm.Id = um.RoleId
-WHERE 
+WHERE ISNULL(um.IsDelete, 0) = 0
+AND
 (
     @CurrentRoleId = 1
-    OR
-    (@CurrentRoleId = 2 AND um.CompanyId = @currentCompanyId)
-    OR
-    (@CurrentRoleId = 4 AND um.Id = @currentUserId)   -- ✅ THIS LINE ADDED
+    OR (@CurrentRoleId = 2 AND um.CompanyId = @CurrentCompanyId)
+    OR (@CurrentRoleId = 4 AND um.Id = @CurrentUserId)
 )
 ORDER BY um.Id DESC;";
 
@@ -70,7 +73,8 @@ SELECT
     CreatedBy,
     CreatedDate,
     UpdatedBy,
-    UpdatedDate
+    UpdatedDate,
+    IsDelete
 FROM UserMaster
 WHERE Id = @Id;";
 
@@ -92,8 +96,29 @@ WHERE Id = @Id;";
             if (string.IsNullOrWhiteSpace(userMaster.Password))
                 throw new Exception("Password is required.");
 
+            if (userMaster.CompanyId <= 0)
+                throw new Exception("Company is required.");
+
             if (userMaster.RoleId <= 0)
-                userMaster.RoleId = 2;
+                userMaster.RoleId = 4;
+
+            using var con = _context.CreateConnection();
+
+            var duplicateCheck = await con.ExecuteScalarAsync<int>(@"
+SELECT COUNT(1)
+FROM UserMaster
+WHERE ISNULL(IsDelete, 0) = 0
+AND (
+    LOWER(UserName) = LOWER(@UserName)
+    OR LOWER(Email) = LOWER(@Email)
+);", new
+            {
+                userMaster.UserName,
+                userMaster.Email
+            });
+
+            if (duplicateCheck > 0)
+                throw new Exception("UserName or Email already exists.");
 
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(userMaster.Password);
             var createdDate = DateTime.Now;
@@ -103,46 +128,45 @@ WHERE Id = @Id;";
 INSERT INTO UserMaster
 (
     CompanyId,
+    RoleId,
     UserName,
     Email,
     PasswordHash,
-    RoleId,
+    IsActive,
     CreatedBy,
     CreatedDate,
     UpdatedBy,
     UpdatedDate,
-    IsActive,
-IsDelete
+    IsDelete
 )
 OUTPUT INSERTED.Id
 VALUES
 (
     @CompanyId,
+    @RoleId,
     @UserName,
     @Email,
     @PasswordHash,
-    4,
+    @IsActive,
     @CreatedBy,
     @CreatedDate,
     @UpdatedBy,
     @UpdatedDate,
-    @IsActive,
-0
+    0
 );";
 
-            using var con = _context.CreateConnection();
             return await con.ExecuteScalarAsync<int>(query, new
             {
                 userMaster.CompanyId,
+                userMaster.RoleId,
                 userMaster.UserName,
                 userMaster.Email,
                 PasswordHash = passwordHash,
-                userMaster.RoleId,
+                userMaster.IsActive,
                 userMaster.CreatedBy,
                 CreatedDate = createdDate,
                 userMaster.UpdatedBy,
-                UpdatedDate = updatedDate,
-                userMaster.IsActive
+                UpdatedDate = updatedDate
             });
         }
 
@@ -157,15 +181,37 @@ VALUES
             if (string.IsNullOrWhiteSpace(userMaster.Email))
                 throw new Exception("Email is required.");
 
+            if (userMaster.CompanyId <= 0)
+                throw new Exception("Company is required.");
+
             if (userMaster.RoleId <= 0)
-                userMaster.RoleId = 2;
+                userMaster.RoleId = 4;
+
+            using var con = _context.CreateConnection();
+
+            var duplicateCheck = await con.ExecuteScalarAsync<int>(@"
+SELECT COUNT(1)
+FROM UserMaster
+WHERE ISNULL(IsDelete, 0) = 0
+AND Id <> @Id
+AND (
+    LOWER(UserName) = LOWER(@UserName)
+    OR LOWER(Email) = LOWER(@Email)
+);", new
+            {
+                userMaster.Id,
+                userMaster.UserName,
+                userMaster.Email
+            });
+
+            if (duplicateCheck > 0)
+                throw new Exception("UserName or Email already exists.");
 
             userMaster.UpdatedDate = DateTime.Now;
 
             string query;
             object param;
 
-            // password new-a kudutha hash panni update pannum
             if (!string.IsNullOrWhiteSpace(userMaster.Password))
             {
                 userMaster.PasswordHash = BCrypt.Net.BCrypt.HashPassword(userMaster.Password);
@@ -174,10 +220,10 @@ VALUES
 UPDATE UserMaster
 SET
     CompanyId = @CompanyId,
+    RoleId = @RoleId,
     UserName = @UserName,
     Email = @Email,
     PasswordHash = @PasswordHash,
-    RoleId = @RoleId,
     IsActive = @IsActive,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate
@@ -187,10 +233,10 @@ WHERE Id = @Id;";
                 {
                     userMaster.Id,
                     userMaster.CompanyId,
+                    userMaster.RoleId,
                     userMaster.UserName,
                     userMaster.Email,
                     userMaster.PasswordHash,
-                    userMaster.RoleId,
                     userMaster.IsActive,
                     userMaster.UpdatedBy,
                     userMaster.UpdatedDate
@@ -198,14 +244,13 @@ WHERE Id = @Id;";
             }
             else
             {
-                // password change illaina old hash retain
                 query = @"
 UPDATE UserMaster
 SET
     CompanyId = @CompanyId,
+    RoleId = @RoleId,
     UserName = @UserName,
     Email = @Email,
-    RoleId = @RoleId,
     IsActive = @IsActive,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate
@@ -215,16 +260,15 @@ WHERE Id = @Id;";
                 {
                     userMaster.Id,
                     userMaster.CompanyId,
+                    userMaster.RoleId,
                     userMaster.UserName,
                     userMaster.Email,
-                    userMaster.RoleId,
                     userMaster.IsActive,
                     userMaster.UpdatedBy,
                     userMaster.UpdatedDate
                 };
             }
 
-            using var con = _context.CreateConnection();
             await con.ExecuteAsync(query, param);
         }
 
@@ -234,6 +278,7 @@ WHERE Id = @Id;";
 UPDATE UserMaster
 SET
     IsDelete = 1,
+    IsActive = 0,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate
 WHERE Id = @Id;";
@@ -247,15 +292,176 @@ WHERE Id = @Id;";
             });
         }
 
-
-
         public async Task<IEnumerable<RolesDTO>> GetRoles()
         {
-            const string sql = @"
-SELECT * from RoleMaster;";
-
+            const string sql = @"SELECT * FROM RoleMaster;";
             using var con = _context.CreateConnection();
             return await con.QueryAsync<RolesDTO>(sql);
+        }
+
+        public async Task<byte[]> DownloadUserTemplateAsync()
+        {
+            ExcelPackage.License.SetNonCommercialPersonal("FBH Group");
+
+            using var package = new ExcelPackage();
+            var worksheet = package.Workbook.Worksheets.Add("Users");
+
+            worksheet.Cells[1, 1].Value = "UserName";
+            worksheet.Cells[1, 2].Value = "Email";
+            worksheet.Cells[1, 3].Value = "Password";
+            worksheet.Cells[1, 4].Value = "IsActive";
+
+            worksheet.Cells[2, 1].Value = "John Peter";
+            worksheet.Cells[2, 2].Value = "john@company.com";
+            worksheet.Cells[2, 3].Value = "123456";
+            worksheet.Cells[2, 4].Value = "TRUE";
+
+            worksheet.Cells[1, 1, 1, 4].Style.Font.Bold = true;
+            worksheet.Cells.AutoFitColumns();
+
+            return await Task.FromResult(package.GetAsByteArray());
+        }
+
+        public async Task<string> BulkUploadUsersAsync(IFormFile file, int updatedBy, int companyId)
+        {
+            if (file == null || file.Length == 0)
+                throw new Exception("Please upload a valid Excel file.");
+
+            if (companyId <= 0)
+                throw new Exception("Invalid company id from login user.");
+
+            ExcelPackage.License.SetNonCommercialPersonal("FBH Group");
+
+            using var stream = new MemoryStream();
+            await file.CopyToAsync(stream);
+            stream.Position = 0;
+
+            using var package = new ExcelPackage(stream);
+            var worksheet = package.Workbook.Worksheets.FirstOrDefault();
+
+            if (worksheet == null)
+                throw new Exception("Worksheet not found in uploaded Excel.");
+
+            using var con = _context.CreateConnection();
+            if (con.State != System.Data.ConnectionState.Open)
+                con.Open();
+
+            int insertedCount = 0;
+            int updatedCount = 0;
+            int defaultRoleId = 4;
+
+            for (int row = 2; row <= worksheet.Dimension.End.Row; row++)
+            {
+                var userName = worksheet.Cells[row, 1].Text?.Trim();
+                var email = worksheet.Cells[row, 2].Text?.Trim();
+                var password = worksheet.Cells[row, 3].Text?.Trim();
+                var isActiveText = worksheet.Cells[row, 4].Text?.Trim();
+
+                if (string.IsNullOrWhiteSpace(userName) && string.IsNullOrWhiteSpace(email))
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(userName))
+                    throw new Exception($"Row {row}: UserName is required.");
+
+                if (string.IsNullOrWhiteSpace(email))
+                    throw new Exception($"Row {row}: Email is required.");
+
+                bool isActive = true;
+                if (!string.IsNullOrWhiteSpace(isActiveText))
+                {
+                    bool.TryParse(isActiveText, out isActive);
+                }
+
+                var existingUser = await con.QueryFirstOrDefaultAsync<dynamic>(@"
+SELECT TOP 1 Id
+FROM UserMaster
+WHERE ISNULL(IsDelete, 0) = 0
+AND LOWER(Email) = LOWER(@Email);", new { Email = email });
+
+                if (existingUser != null)
+                {
+                    string updateQuery = @"
+UPDATE UserMaster
+SET
+    UserName = @UserName,
+    CompanyId = @CompanyId,
+    RoleId = @RoleId,
+    IsActive = @IsActive,
+    UpdatedBy = @UpdatedBy,
+    UpdatedDate = @UpdatedDate"
+                    + (!string.IsNullOrWhiteSpace(password) ? ", PasswordHash = @PasswordHash " : " ")
+                    + "WHERE Id = @Id;";
+
+                    await con.ExecuteAsync(updateQuery, new
+                    {
+                        Id = (int)existingUser.Id,
+                        UserName = userName,
+                        CompanyId = companyId,
+                        RoleId = defaultRoleId,
+                        IsActive = isActive,
+                        UpdatedBy = updatedBy,
+                        UpdatedDate = DateTime.Now,
+                        PasswordHash = !string.IsNullOrWhiteSpace(password)
+                            ? BCrypt.Net.BCrypt.HashPassword(password)
+                            : null
+                    });
+
+                    updatedCount++;
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(password))
+                        password = "123456";
+
+                    const string insertQuery = @"
+INSERT INTO UserMaster
+(
+    CompanyId,
+    RoleId,
+    UserName,
+    Email,
+    PasswordHash,
+    IsActive,
+    CreatedBy,
+    CreatedDate,
+    UpdatedBy,
+    UpdatedDate,
+    IsDelete
+)
+VALUES
+(
+    @CompanyId,
+    @RoleId,
+    @UserName,
+    @Email,
+    @PasswordHash,
+    @IsActive,
+    @CreatedBy,
+    @CreatedDate,
+    @UpdatedBy,
+    @UpdatedDate,
+    0
+);";
+
+                    await con.ExecuteAsync(insertQuery, new
+                    {
+                        CompanyId = companyId,
+                        RoleId = defaultRoleId,
+                        UserName = userName,
+                        Email = email,
+                        PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
+                        IsActive = isActive,
+                        CreatedBy = updatedBy,
+                        CreatedDate = DateTime.Now,
+                        UpdatedBy = updatedBy,
+                        UpdatedDate = DateTime.Now
+                    });
+
+                    insertedCount++;
+                }
+            }
+
+            return $"Bulk upload completed successfully. Inserted: {insertedCount}, Updated: {updatedCount}";
         }
     }
 }
