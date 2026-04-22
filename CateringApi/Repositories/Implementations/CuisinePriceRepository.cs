@@ -327,33 +327,63 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
 
         public async Task<List<PriceListDto>> GetPriceList()
         {
-            var query = from p in _context1.SessionPrice
-                        join s in _context1.Session on p.SessionId equals s.Id
-                        where p.IsActive && p.CompanyId == 0
-                        select new PriceListDto
-                        {
-                            Id = p.Id,
-                            PriceId = p.Id,
-                            CompanyId = p.CompanyId,
-                            CompanyName = "Default For All Companies",
-                            SessionId = p.SessionId,
-                            SessionName = s.SessionName,
-                            CuisineId = 0,
-                            CuisineName = string.Empty,
-                            Rate = p.Rate,
-                            EffectiveFrom = p.EffectiveFrom,
-                            EffectiveTo = null,
-                            ActionType = "DEFAULT",
-                            IsActive = p.IsActive,
-                            IsCurrent = true,
-                            PlanType = p.PlanType
-                        };
+            var today = DateTime.Today;
 
-            return await query
+            var baseQuery = from p in _context1.SessionPrice
+                            join s in _context1.Session on p.SessionId equals s.Id
+                            where p.IsActive
+                                  && p.CompanyId == 0
+                                  && p.EffectiveFrom.Date <= today
+                            select new
+                            {
+                                p.Id,
+                                p.CompanyId,
+                                p.SessionId,
+                                SessionName = s.SessionName,
+                                p.Rate,
+                                p.EffectiveFrom,
+                                p.PlanType
+                            };
+
+            var rawData = await baseQuery
                 .OrderBy(x => x.PlanType)
                 .ThenBy(x => x.SessionName)
                 .ThenByDescending(x => x.EffectiveFrom)
                 .ToListAsync();
+
+            var result = rawData
+                .GroupBy(x => new
+                {
+                    PlanType = (x.PlanType ?? "").Trim().ToLower(),
+                    x.SessionId
+                })
+                .Select(g => g
+                    .OrderByDescending(x => x.EffectiveFrom)
+                    .ThenByDescending(x => x.Id)
+                    .First())
+                .Select(x => new PriceListDto
+                {
+                    Id = x.Id,
+                    PriceId = x.Id,
+                    CompanyId = x.CompanyId,
+                    CompanyName = "Default For All Companies",
+                    SessionId = x.SessionId,
+                    SessionName = x.SessionName,
+                    CuisineId = 0,
+                    CuisineName = string.Empty,
+                    Rate = x.Rate,
+                    EffectiveFrom = x.EffectiveFrom,
+                    EffectiveTo = null,
+                    ActionType = "DEFAULT",
+                    IsActive = true,
+                    IsCurrent = true,
+                    PlanType = x.PlanType
+                })
+                .OrderBy(x => x.PlanType)
+                .ThenBy(x => x.SessionName)
+                .ToList();
+
+            return result;
         }
 
         public class SessionPriceExistingDto
