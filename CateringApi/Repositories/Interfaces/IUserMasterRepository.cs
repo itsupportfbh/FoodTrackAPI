@@ -1,5 +1,6 @@
 ﻿using CateringApi.DTOs;
 using CateringApi.DTOs.User;
+using Microsoft.AspNetCore.Http;
 
 namespace CateringApi.Repositories.Interfaces
 {
@@ -10,8 +11,9 @@ namespace CateringApi.Repositories.Interfaces
         Task<int> CreateAsync(CreateUserMasterDto userMaster);
         Task UpdateAsync(UserMaster userMaster);
         Task DeleteAsync(int id, int updatedBy);
-
-
         Task<IEnumerable<RolesDTO>> GetRoles();
+
+        Task<byte[]> DownloadUserTemplateAsync();
+        Task<string> BulkUploadUsersAsync(IFormFile file, int updatedBy, int companyId);
     }
 }
