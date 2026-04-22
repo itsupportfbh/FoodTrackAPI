@@ -12,6 +12,7 @@
 
         public bool IsActive { get; set; } = true;
         public int? UserId { get; set; }
+        public string? PlanType { get; set; }
 
         public int? CreatedBy { get; set; }
         public DateTime? CreatedDate { get; set; }
@@ -43,6 +44,7 @@
         public DateTime FromDate { get; set; }
         public DateTime ToDate { get; set; }
         public decimal TotalQty { get; set; }
+        public string? PlanType { get; set; }
 
         public bool IsActive { get; set; }
 

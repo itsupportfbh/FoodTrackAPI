@@ -130,6 +130,7 @@ SELECT
     rh.FromDate,
     rh.ToDate,
     rh.TotalQty,
+    rh.PlanType,
     rh.IsActive,
     rh.CreatedBy,
     rh.CreatedDate,
@@ -164,6 +165,7 @@ SELECT
     rh.FromDate,
     rh.ToDate,
     rh.TotalQty,
+    rh.PlanType,
     rh.IsActive,
     rh.CreatedBy,
     rh.CreatedDate,
@@ -251,6 +253,7 @@ SET
     FromDate = @FromDate,
     ToDate = @ToDate,
     TotalQty = @TotalQty,
+    PlanType = @PlanType,
     IsActive = @IsActive,
     UpdatedBy = @UserId,
     UpdatedDate = GETDATE()
@@ -262,6 +265,7 @@ WHERE Id = @Id;";
                         model.FromDate,
                         model.ToDate,
                         TotalQty = totalQty,
+                        model.PlanType,
                         model.IsActive,
                         model.UserId,
                         model.Id
@@ -326,6 +330,7 @@ INSERT INTO dbo.RequestHeader
     FromDate,
     ToDate,
     TotalQty,
+    PlanType,
     IsActive,
     CreatedBy,
     CreatedDate
@@ -337,6 +342,7 @@ VALUES
     @FromDate,
     @ToDate,
     @TotalQty,
+    @PlanType,
     1,
     @UserId,
     GETDATE()
@@ -350,6 +356,7 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                         model.FromDate,
                         model.ToDate,
                         TotalQty = totalQty,
+                        model.PlanType,
                         model.UserId
                     }, tran);
 
