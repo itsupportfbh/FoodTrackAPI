@@ -12,5 +12,8 @@
         public bool IsDelete { get; set; }
         public int CreatedBy { get; set; }
         public int UpdatedBy { get; set; }
+
+        public int? CuisinePriceId { get; set; }
+        public string? PlanType { get; set; }
     }
 }
