@@ -12,7 +12,6 @@
 
         public bool IsActive { get; set; } = true;
         public int? UserId { get; set; }
-        public string? PlanType { get; set; }
 
         public int? CreatedBy { get; set; }
         public DateTime? CreatedDate { get; set; }
@@ -24,13 +23,21 @@
 
     public class RequestDetailModel
     {
-        public int? Id { get; set; }
+        public int Id { get; set; }
         public int RequestHeaderId { get; set; }
-        public int SessionId { get; set; }
+
+        public string PlanType { get; set; } = string.Empty;
+
+        public int? SessionId { get; set; }
         public int CuisineId { get; set; }
-        public int LocationId { get; set; }
+        public int? LocationId { get; set; }
+
         public decimal Qty { get; set; }
-        public bool IsActive { get; set; } = true;
+        public bool IsActive { get; set; }
+        public int CreatedBy { get; set; }
+        public DateTime CreatedDate { get; set; }
+        public int? UpdatedBy { get; set; }
+        public DateTime? UpdatedDate { get; set; }
     }
 
     public class RequestDto
@@ -44,7 +51,6 @@
         public DateTime FromDate { get; set; }
         public DateTime ToDate { get; set; }
         public decimal TotalQty { get; set; }
-        public string? PlanType { get; set; }
 
         public bool IsActive { get; set; }
 
@@ -62,6 +68,8 @@
     {
         public int Id { get; set; }
         public int RequestHeaderId { get; set; }
+
+        public string PlanType { get; set; } = string.Empty;
 
         public int SessionId { get; set; }
         public string SessionName { get; set; } = string.Empty;
@@ -105,5 +113,10 @@
         public string? LateLunchCutOffTime { get; set; }
         public string? DinnerCutOffTime { get; set; }
         public string? LateDinnerCutOffTime { get; set; }
+    }
+    public class PlanUserCountDto
+    {
+        public string PlanType { get; set; } = string.Empty;
+        public int UserCount { get; set; }
     }
 }
