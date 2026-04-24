@@ -19,5 +19,8 @@
 
         public string CompanyName { get; set; }
         public string RoleName { get; set; }
+
+        public int? CuisinePriceId { get; set; }
+        public string? PlanType { get; set; }
     }
 }

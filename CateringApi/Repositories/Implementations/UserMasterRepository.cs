@@ -19,6 +19,32 @@ namespace CateringApi.Repositories.Implementations
             _context = context;
         }
 
+        private static string ValidatePlanType(string? planType, int row = 0)
+        {
+            if (string.IsNullOrWhiteSpace(planType))
+            {
+                if (row > 0)
+                    throw new Exception($"Row {row}: Plan Type is required.");
+
+                throw new Exception("Plan Type is required.");
+            }
+
+            var validPlanTypes = new[] { "Basic", "Standard", "Premium" };
+
+            var matchedPlanType = validPlanTypes.FirstOrDefault(x =>
+                x.Equals(planType.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(matchedPlanType))
+            {
+                if (row > 0)
+                    throw new Exception($"Row {row}: Plan Type must be Basic, Standard, or Premium.");
+
+                throw new Exception("Plan Type must be Basic, Standard, or Premium.");
+            }
+
+            return matchedPlanType;
+        }
+
         public async Task<IEnumerable<UserMasterDTO>> GetAllAsync(long currentUserId, int currentRoleId, int currentCompanyId)
         {
             const string sql = @"
@@ -35,6 +61,7 @@ SELECT
     um.UpdatedBy,
     um.UpdatedDate,
     um.IsDelete,
+    um.PlanType,
     cm.CompanyName,
     cm.CompanyCode,
     rm.RoleName
@@ -51,6 +78,7 @@ AND
 ORDER BY um.Id DESC;";
 
             using var con = _context.CreateConnection();
+
             return await con.QueryAsync<UserMasterDTO>(sql, new
             {
                 CurrentUserId = currentUserId,
@@ -74,11 +102,13 @@ SELECT
     CreatedDate,
     UpdatedBy,
     UpdatedDate,
-    IsDelete
+    IsDelete,
+    PlanType
 FROM UserMaster
 WHERE Id = @Id;";
 
             using var con = _context.CreateConnection();
+
             return await con.QueryFirstOrDefaultAsync<UserMaster>(query, new { Id = id });
         }
 
@@ -101,6 +131,8 @@ WHERE Id = @Id;";
 
             if (userMaster.RoleId <= 0)
                 userMaster.RoleId = 4;
+
+            userMaster.PlanType = ValidatePlanType(userMaster.PlanType);
 
             using var con = _context.CreateConnection();
 
@@ -129,6 +161,7 @@ INSERT INTO UserMaster
 (
     CompanyId,
     RoleId,
+    PlanType,
     UserName,
     Email,
     PasswordHash,
@@ -144,6 +177,7 @@ VALUES
 (
     @CompanyId,
     @RoleId,
+    @PlanType,
     @UserName,
     @Email,
     @PasswordHash,
@@ -159,6 +193,7 @@ VALUES
             {
                 userMaster.CompanyId,
                 userMaster.RoleId,
+                userMaster.PlanType,
                 userMaster.UserName,
                 userMaster.Email,
                 PasswordHash = passwordHash,
@@ -186,6 +221,8 @@ VALUES
 
             if (userMaster.RoleId <= 0)
                 userMaster.RoleId = 4;
+
+            userMaster.PlanType = ValidatePlanType(userMaster.PlanType);
 
             using var con = _context.CreateConnection();
 
@@ -221,6 +258,7 @@ UPDATE UserMaster
 SET
     CompanyId = @CompanyId,
     RoleId = @RoleId,
+    PlanType = @PlanType,
     UserName = @UserName,
     Email = @Email,
     PasswordHash = @PasswordHash,
@@ -234,6 +272,7 @@ WHERE Id = @Id;";
                     userMaster.Id,
                     userMaster.CompanyId,
                     userMaster.RoleId,
+                    userMaster.PlanType,
                     userMaster.UserName,
                     userMaster.Email,
                     userMaster.PasswordHash,
@@ -249,6 +288,7 @@ UPDATE UserMaster
 SET
     CompanyId = @CompanyId,
     RoleId = @RoleId,
+    PlanType = @PlanType,
     UserName = @UserName,
     Email = @Email,
     IsActive = @IsActive,
@@ -261,6 +301,7 @@ WHERE Id = @Id;";
                     userMaster.Id,
                     userMaster.CompanyId,
                     userMaster.RoleId,
+                    userMaster.PlanType,
                     userMaster.UserName,
                     userMaster.Email,
                     userMaster.IsActive,
@@ -284,6 +325,7 @@ SET
 WHERE Id = @Id;";
 
             using var con = _context.CreateConnection();
+
             await con.ExecuteAsync(query, new
             {
                 Id = id,
@@ -295,7 +337,9 @@ WHERE Id = @Id;";
         public async Task<IEnumerable<RolesDTO>> GetRoles()
         {
             const string sql = @"SELECT * FROM RoleMaster;";
+
             using var con = _context.CreateConnection();
+
             return await con.QueryAsync<RolesDTO>(sql);
         }
 
@@ -304,19 +348,35 @@ WHERE Id = @Id;";
             ExcelPackage.License.SetNonCommercialPersonal("FBH Group");
 
             using var package = new ExcelPackage();
+
             var worksheet = package.Workbook.Worksheets.Add("Users");
+            var planSheet = package.Workbook.Worksheets.Add("PlanTypes");
+
+            planSheet.Hidden = eWorkSheetHidden.VeryHidden;
 
             worksheet.Cells[1, 1].Value = "UserName";
             worksheet.Cells[1, 2].Value = "Email";
             worksheet.Cells[1, 3].Value = "Password";
             worksheet.Cells[1, 4].Value = "IsActive";
+            worksheet.Cells[1, 5].Value = "PlanType";
 
             worksheet.Cells[2, 1].Value = "John Peter";
             worksheet.Cells[2, 2].Value = "john@company.com";
             worksheet.Cells[2, 3].Value = "123456";
             worksheet.Cells[2, 4].Value = "TRUE";
+            worksheet.Cells[2, 5].Value = "Basic";
 
-            worksheet.Cells[1, 1, 1, 4].Style.Font.Bold = true;
+            planSheet.Cells[1, 1].Value = "Basic";
+            planSheet.Cells[2, 1].Value = "Standard";
+            planSheet.Cells[3, 1].Value = "Premium";
+
+            var validation = worksheet.DataValidations.AddListValidation("E2:E1000");
+            validation.Formula.ExcelFormula = "PlanTypes!$A$1:$A$3";
+            validation.ShowErrorMessage = true;
+            validation.ErrorTitle = "Invalid Plan Type";
+            validation.Error = "Please select Basic, Standard, or Premium.";
+
+            worksheet.Cells[1, 1, 1, 5].Style.Font.Bold = true;
             worksheet.Cells.AutoFitColumns();
 
             return await Task.FromResult(package.GetAsByteArray());
@@ -339,11 +399,12 @@ WHERE Id = @Id;";
             using var package = new ExcelPackage(stream);
             var worksheet = package.Workbook.Worksheets.FirstOrDefault();
 
-            if (worksheet == null)
-                throw new Exception("Worksheet not found in uploaded Excel.");
+            if (worksheet == null || worksheet.Dimension == null)
+                throw new Exception("Worksheet not found or empty.");
 
             using var con = _context.CreateConnection();
-            if (con.State != System.Data.ConnectionState.Open)
+
+            if (con.State != ConnectionState.Open)
                 con.Open();
 
             int insertedCount = 0;
@@ -356,8 +417,13 @@ WHERE Id = @Id;";
                 var email = worksheet.Cells[row, 2].Text?.Trim();
                 var password = worksheet.Cells[row, 3].Text?.Trim();
                 var isActiveText = worksheet.Cells[row, 4].Text?.Trim();
+                var planTypeText = worksheet.Cells[row, 5].Text?.Trim();
 
-                if (string.IsNullOrWhiteSpace(userName) && string.IsNullOrWhiteSpace(email))
+                if (
+                    string.IsNullOrWhiteSpace(userName) &&
+                    string.IsNullOrWhiteSpace(email) &&
+                    string.IsNullOrWhiteSpace(planTypeText)
+                )
                     continue;
 
                 if (string.IsNullOrWhiteSpace(userName))
@@ -366,17 +432,21 @@ WHERE Id = @Id;";
                 if (string.IsNullOrWhiteSpace(email))
                     throw new Exception($"Row {row}: Email is required.");
 
+                var planType = ValidatePlanType(planTypeText, row);
+
                 bool isActive = true;
+
                 if (!string.IsNullOrWhiteSpace(isActiveText))
-                {
                     bool.TryParse(isActiveText, out isActive);
-                }
 
                 var existingUser = await con.QueryFirstOrDefaultAsync<dynamic>(@"
 SELECT TOP 1 Id
 FROM UserMaster
 WHERE ISNULL(IsDelete, 0) = 0
-AND LOWER(Email) = LOWER(@Email);", new { Email = email });
+AND LOWER(Email) = LOWER(@Email);", new
+                {
+                    Email = email
+                });
 
                 if (existingUser != null)
                 {
@@ -386,11 +456,13 @@ SET
     UserName = @UserName,
     CompanyId = @CompanyId,
     RoleId = @RoleId,
+    PlanType = @PlanType,
     IsActive = @IsActive,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate"
-                    + (!string.IsNullOrWhiteSpace(password) ? ", PasswordHash = @PasswordHash " : " ")
-                    + "WHERE Id = @Id;";
+                        + (!string.IsNullOrWhiteSpace(password) ? ", PasswordHash = @PasswordHash " : " ")
+                        + @"
+WHERE Id = @Id;";
 
                     await con.ExecuteAsync(updateQuery, new
                     {
@@ -398,6 +470,7 @@ SET
                         UserName = userName,
                         CompanyId = companyId,
                         RoleId = defaultRoleId,
+                        PlanType = planType,
                         IsActive = isActive,
                         UpdatedBy = updatedBy,
                         UpdatedDate = DateTime.Now,
@@ -418,6 +491,7 @@ INSERT INTO UserMaster
 (
     CompanyId,
     RoleId,
+    PlanType,
     UserName,
     Email,
     PasswordHash,
@@ -432,6 +506,7 @@ VALUES
 (
     @CompanyId,
     @RoleId,
+    @PlanType,
     @UserName,
     @Email,
     @PasswordHash,
@@ -447,6 +522,7 @@ VALUES
                     {
                         CompanyId = companyId,
                         RoleId = defaultRoleId,
+                        PlanType = planType,
                         UserName = userName,
                         Email = email,
                         PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
