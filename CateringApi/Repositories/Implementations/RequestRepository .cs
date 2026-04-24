@@ -130,7 +130,6 @@ SELECT
     rh.FromDate,
     rh.ToDate,
     rh.TotalQty,
-    rh.PlanType,
     rh.IsActive,
     rh.CreatedBy,
     rh.CreatedDate,
@@ -165,7 +164,6 @@ SELECT
     rh.FromDate,
     rh.ToDate,
     rh.TotalQty,
-    rh.PlanType,
     rh.IsActive,
     rh.CreatedBy,
     rh.CreatedDate,
@@ -180,6 +178,7 @@ WHERE rh.Id = @Id
 SELECT
     rd.Id,
     rd.RequestHeaderId,
+    rd.PlanType,
     rd.SessionId,
     s.SessionName,
     rd.CuisineId,
@@ -188,9 +187,9 @@ SELECT
     l.LocationName,
     rd.Qty
 FROM dbo.RequestDetail rd
-INNER JOIN dbo.Session s ON s.Id = rd.SessionId
 INNER JOIN dbo.CuisineMaster cm ON cm.Id = rd.CuisineId
-INNER JOIN dbo.Location l ON l.Id = rd.LocationId
+LEFT JOIN dbo.Session s ON s.Id = rd.SessionId
+LEFT JOIN dbo.Location l ON l.Id = rd.LocationId
 WHERE rd.RequestHeaderId = @Id
   AND rd.IsActive = 1
 ORDER BY rd.Id;";
@@ -253,7 +252,6 @@ SET
     FromDate = @FromDate,
     ToDate = @ToDate,
     TotalQty = @TotalQty,
-    PlanType = @PlanType,
     IsActive = @IsActive,
     UpdatedBy = @UserId,
     UpdatedDate = GETDATE()
@@ -265,7 +263,6 @@ WHERE Id = @Id;";
                         model.FromDate,
                         model.ToDate,
                         TotalQty = totalQty,
-                        model.PlanType,
                         model.IsActive,
                         model.UserId,
                         model.Id
@@ -284,9 +281,8 @@ WHERE RequestHeaderId = @RequestHeaderId;";
 INSERT INTO dbo.RequestDetail
 (
     RequestHeaderId,
-    SessionId,
+    PlanType,
     CuisineId,
-    LocationId,
     Qty,
     IsActive,
     CreatedBy,
@@ -295,23 +291,20 @@ INSERT INTO dbo.RequestDetail
 VALUES
 (
     @RequestHeaderId,
-    @SessionId,
+    @PlanType,
     @CuisineId,
-    @LocationId,
     @Qty,
     1,
     @UserId,
     GETDATE()
 );";
-
                     foreach (var line in model.Lines)
                     {
                         await con.ExecuteAsync(insertLineSql, new
                         {
                             RequestHeaderId = model.Id.Value,
-                            line.SessionId,
+                            line.PlanType,
                             line.CuisineId,
-                            line.LocationId,
                             line.Qty,
                             model.UserId
                         }, tran);
@@ -330,7 +323,6 @@ INSERT INTO dbo.RequestHeader
     FromDate,
     ToDate,
     TotalQty,
-    PlanType,
     IsActive,
     CreatedBy,
     CreatedDate
@@ -342,7 +334,6 @@ VALUES
     @FromDate,
     @ToDate,
     @TotalQty,
-    @PlanType,
     1,
     @UserId,
     GETDATE()
@@ -356,7 +347,6 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                         model.FromDate,
                         model.ToDate,
                         TotalQty = totalQty,
-                        model.PlanType,
                         model.UserId
                     }, tran);
 
@@ -377,9 +367,8 @@ WHERE Id = @Id;";
 INSERT INTO dbo.RequestDetail
 (
     RequestHeaderId,
-    SessionId,
+    PlanType,
     CuisineId,
-    LocationId,
     Qty,
     IsActive,
     CreatedBy,
@@ -388,9 +377,8 @@ INSERT INTO dbo.RequestDetail
 VALUES
 (
     @RequestHeaderId,
-    @SessionId,
+    @PlanType,
     @CuisineId,
-    @LocationId,
     @Qty,
     1,
     @UserId,
@@ -402,9 +390,8 @@ VALUES
                         await con.ExecuteAsync(insertLineSql, new
                         {
                             RequestHeaderId = newId,
-                            line.SessionId,
+                            line.PlanType,
                             line.CuisineId,
-                            line.LocationId,
                             line.Qty,
                             model.UserId
                         }, tran);
@@ -495,6 +482,26 @@ WHERE rh.IsActive = 1
 
             return count > 0;
         }
+
+        public async Task<IEnumerable<PlanUserCountDto>> GetPlanUserCountsAsync(int companyId)
+        {
+            using var con = _context.CreateConnection();
+
+            const string sql = @"
+SELECT
+    PlanType,
+    COUNT(1) AS UserCount
+FROM dbo.UserMaster
+WHERE CompanyId = @CompanyId
+  AND IsActive = 1
+  AND ISNULL(IsDelete, 0) = 0
+  AND ISNULL(PlanType, '') <> ''
+GROUP BY PlanType;";
+
+            return await con.QueryAsync<PlanUserCountDto>(sql, new { CompanyId = companyId });
+        }
+
+
     }
 
 }

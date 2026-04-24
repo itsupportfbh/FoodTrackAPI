@@ -60,17 +60,48 @@ namespace CateringApi.Controllers
             if (model.Lines == null || !model.Lines.Any())
                 return BadRequest("At least one line is required.");
 
-            if (model.Lines.Any(x => x.SessionId <= 0))
-                return BadRequest("Session is required in all lines.");
+            if (model.Lines.Any(x => string.IsNullOrWhiteSpace(x.PlanType)))
+                return BadRequest("Plan is required in all lines.");
 
             if (model.Lines.Any(x => x.CuisineId <= 0))
                 return BadRequest("Cuisine is required in all lines.");
 
-            if (model.Lines.Any(x => x.LocationId <= 0))
-                return BadRequest("Location is required in all lines.");
-
             if (model.Lines.Any(x => x.Qty <= 0))
                 return BadRequest("Qty must be greater than zero in all lines.");
+
+            // ✅ ADD THIS BLOCK HERE
+            var planUserCounts = await _repository.GetPlanUserCountsAsync(model.CompanyId);
+
+            var userCountMap = planUserCounts.ToDictionary(
+                x => x.PlanType.Trim().ToLower(),
+                x => x.UserCount
+            );
+
+            var mismatchPlans = model.Lines
+                .GroupBy(x => x.PlanType.Trim())
+                .Select(g => new
+                {
+                    PlanType = g.Key,
+                    EnteredQty = g.Sum(x => x.Qty),
+                    AvailableUsers = userCountMap.ContainsKey(g.Key.ToLower())
+                        ? userCountMap[g.Key.ToLower()]
+                        : 0
+                })
+                .Where(x => x.EnteredQty != x.AvailableUsers)
+                .ToList();
+
+            if (mismatchPlans.Any())
+            {
+                var message = string.Join(" | ", mismatchPlans.Select(x =>
+                    $"{x.PlanType} plan has {x.AvailableUsers} active user(s). You entered {x.EnteredQty}."));
+
+                return BadRequest(new
+                {
+                    success = false,
+                    message
+                });
+            }
+            // ✅ END HERE
 
             var id = await _repository.SaveRequestAsync(model);
 
@@ -144,6 +175,16 @@ namespace CateringApi.Controllers
                     ? "Order already exists for the selected date range"
                     : "No overlap found"
             });
+        }
+
+        [HttpGet("GetPlanUserCounts")]
+        public async Task<IActionResult> GetPlanUserCounts([FromQuery] int companyId)
+        {
+            if (companyId <= 0)
+                return BadRequest("Company is required.");
+
+            var data = await _repository.GetPlanUserCountsAsync(companyId);
+            return Ok(new { data });
         }
     }
 }
