@@ -1,74 +1,94 @@
 ﻿using CateringApi.DTOs.RequestOverride;
-using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-[ApiController]
-[Route("api/[controller]")]
-[Authorize]
-public class RequestOverrideController : ControllerBase
+namespace CateringApi.Controllers
 {
-    private readonly IRequestOverrideRepository _service;
-
-    public RequestOverrideController(IRequestOverrideRepository service)
+    [Route("api/[controller]")]
+    [ApiController]
+    [Authorize]
+    public class RequestOverrideController : ControllerBase
     {
-        _service = service;
-    }
+        private readonly IRequestOverrideRepository _repository;
 
-    [HttpGet("screen")]
-    public async Task<IActionResult> GetScreen([FromQuery] int requestHeaderId, [FromQuery] DateTime fromDate, [FromQuery] DateTime toDate)
-    {
-        var data = await _service.GetScreenDataAsync(requestHeaderId, fromDate, toDate);
-
-        return Ok(new
+        public RequestOverrideController(IRequestOverrideRepository repository)
         {
-            isSuccess = true,
-            message = "Success",
-            data
-        });
-    }
+            _repository = repository;
+        }
 
-    [HttpPost("save")]
-    public async Task<IActionResult> Save([FromBody] SaveRequestOverrideDto dto)
-    {
-        Console.WriteLine("CONTROLLER SAVE HIT: " + DateTime.Now.ToString("HH:mm:ss.fff"));
-
-        var id = await _service.SaveAsync(dto);
-
-        Console.WriteLine("CONTROLLER SAVE SUCCESS ID: " + id);
-
-        return Ok(new
+        [HttpGet("GetScreenData")]
+        public async Task<IActionResult> GetScreenData(
+            [FromQuery] int requestHeaderId,
+            [FromQuery] DateTime fromDate,
+            [FromQuery] DateTime toDate)
         {
-            isSuccess = true,
-            id = id,
-            message = "Override saved successfully"
-        });
-    }
+            var data = await _repository.GetScreenDataAsync(requestHeaderId, fromDate, toDate);
 
-    [HttpGet("list")]
-    public async Task<IActionResult> GetOverrideList([FromQuery] int companyId = 0)
-    {
-        var result = await _service.GetOverrideList(companyId);
-        return Ok(result);
-    }
+            if (data == null)
+            {
+                return Ok(new
+                {
+                    isSuccess = false,
+                    message = "Request override data not found.",
+                    messageType = "error",
+                    data = (object?)null
+                });
+            }
 
-    [HttpGet("lines/{requestOverrideId}")]
-    public async Task<IActionResult> GetOverrideLines(int requestOverrideId)
-    {
-        var result = await _service.GetOverrideLines(requestOverrideId);
-        return Ok(result);
-    }
+            return Ok(new
+            {
+                isSuccess = true,
+                message = "Data loaded successfully.",
+                messageType = "success",
+                data
+            });
+        }
 
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete(int id, [FromQuery] int updatedBy = 0)
-    {
-        await _service.DeleteAsync(id, updatedBy);
-
-        return Ok(new
+        [HttpPost("Save")]
+        public async Task<IActionResult> Save([FromBody] SaveRequestOverrideDto dto)
         {
-            isSuccess = true,
-            message = "Override deleted successfully"
-        });
+            var result = await _repository.SaveAsync(dto);
+            return Ok(result);
+        }
+
+        [HttpGet("GetOverrideList")]
+        public async Task<IActionResult> GetOverrideList([FromQuery] int companyId)
+        {
+            var data = await _repository.GetOverrideList(companyId);
+
+            return Ok(new
+            {
+                isSuccess = true,
+                message = "Data loaded successfully.",
+                data
+            });
+        }
+
+        [HttpGet("GetOverrideLines")]
+        public async Task<IActionResult> GetOverrideLines([FromQuery] int requestOverrideId)
+        {
+            var data = await _repository.GetOverrideLines(requestOverrideId);
+
+            return Ok(new
+            {
+                isSuccess = true,
+                message = "Data loaded successfully.",
+                data
+            });
+        }
+
+        [HttpDelete("Delete/{id}/{updatedBy}")]
+        public async Task<IActionResult> Delete(int id, int updatedBy)
+        {
+            await _repository.DeleteAsync(id, updatedBy);
+
+            return Ok(new
+            {
+                isSuccess = true,
+                message = "Override deleted successfully.",
+                messageType = "success"
+            });
+        }
     }
 }
