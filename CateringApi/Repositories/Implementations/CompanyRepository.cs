@@ -278,7 +278,8 @@ INSERT INTO dbo.UserMaster
     PasswordHash,
     IsActive,
     CreatedBy,
-    CreatedDate
+    CreatedDate,
+PlanType
 )
 VALUES
 (
@@ -289,7 +290,8 @@ VALUES
     @PasswordHash,
     1,
     @CreatedBy,
-    GETDATE()
+    GETDATE(),
+'Basic'
 );";
 
                     await con.ExecuteAsync(insertUserSql, new
