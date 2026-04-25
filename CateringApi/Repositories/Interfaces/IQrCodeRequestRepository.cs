@@ -31,10 +31,11 @@ namespace CateringApi.Repositories.Interfaces
      int? overrideId,
      string? planType
  );
-       Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(
+    
+     Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(
      int companyId,
      string planType,
      int count,
-     int cuisineId);
+     List<int> cuisineIds);
     }
 }
