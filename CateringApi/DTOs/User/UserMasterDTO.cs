@@ -22,5 +22,7 @@
 
         public int? CuisinePriceId { get; set; }
         public string? PlanType { get; set; }
+        public int? CuisineId { get; set; }
+        public string? CuisineName { get; set; }
     }
 }

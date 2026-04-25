@@ -64,10 +64,13 @@ SELECT
     um.PlanType,
     cm.CompanyName,
     cm.CompanyCode,
-    rm.RoleName
+    rm.RoleName,
+    um.CuisineId,
+    cu.CuisineName
 FROM UserMaster um
 INNER JOIN CompanyMaster cm ON cm.Id = um.CompanyId
 INNER JOIN RoleMaster rm ON rm.Id = um.RoleId
+LEFT JOIN CuisineMaster cu ON cu.Id = um.CuisineId
 WHERE ISNULL(um.IsDelete, 0) = 0
 AND
 (
@@ -103,7 +106,8 @@ SELECT
     UpdatedBy,
     UpdatedDate,
     IsDelete,
-    PlanType
+    PlanType,
+    CuisineId
 FROM UserMaster
 WHERE Id = @Id;";
 
@@ -162,6 +166,7 @@ INSERT INTO UserMaster
     CompanyId,
     RoleId,
     PlanType,
+    CuisineId,
     UserName,
     Email,
     PasswordHash,
@@ -178,6 +183,7 @@ VALUES
     @CompanyId,
     @RoleId,
     @PlanType,
+    @CuisineId,
     @UserName,
     @Email,
     @PasswordHash,
@@ -194,6 +200,7 @@ VALUES
                 userMaster.CompanyId,
                 userMaster.RoleId,
                 userMaster.PlanType,
+                userMaster.CuisineId,
                 userMaster.UserName,
                 userMaster.Email,
                 PasswordHash = passwordHash,
@@ -259,6 +266,7 @@ SET
     CompanyId = @CompanyId,
     RoleId = @RoleId,
     PlanType = @PlanType,
+    CuisineId = @CuisineId,
     UserName = @UserName,
     Email = @Email,
     PasswordHash = @PasswordHash,
@@ -273,6 +281,7 @@ WHERE Id = @Id;";
                     userMaster.CompanyId,
                     userMaster.RoleId,
                     userMaster.PlanType,
+                    userMaster.CuisineId,
                     userMaster.UserName,
                     userMaster.Email,
                     userMaster.PasswordHash,
