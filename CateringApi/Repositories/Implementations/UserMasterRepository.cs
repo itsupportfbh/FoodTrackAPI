@@ -360,14 +360,17 @@ WHERE Id = @Id;";
 
             var worksheet = package.Workbook.Worksheets.Add("Users");
             var planSheet = package.Workbook.Worksheets.Add("PlanTypes");
+            var cuisineSheet = package.Workbook.Worksheets.Add("Cuisines");
 
             planSheet.Hidden = eWorkSheetHidden.VeryHidden;
+            cuisineSheet.Hidden = eWorkSheetHidden.VeryHidden;
 
             worksheet.Cells[1, 1].Value = "UserName";
             worksheet.Cells[1, 2].Value = "Email";
             worksheet.Cells[1, 3].Value = "Password";
             worksheet.Cells[1, 4].Value = "IsActive";
             worksheet.Cells[1, 5].Value = "PlanType";
+            worksheet.Cells[1, 6].Value = "Cuisine";
 
             worksheet.Cells[2, 1].Value = "John Peter";
             worksheet.Cells[2, 2].Value = "john@company.com";
@@ -379,13 +382,41 @@ WHERE Id = @Id;";
             planSheet.Cells[2, 1].Value = "Standard";
             planSheet.Cells[3, 1].Value = "Premium";
 
-            var validation = worksheet.DataValidations.AddListValidation("E2:E1000");
-            validation.Formula.ExcelFormula = "PlanTypes!$A$1:$A$3";
-            validation.ShowErrorMessage = true;
-            validation.ErrorTitle = "Invalid Plan Type";
-            validation.Error = "Please select Basic, Standard, or Premium.";
+            using var con = _context.CreateConnection();
 
-            worksheet.Cells[1, 1, 1, 5].Style.Font.Bold = true;
+            var cuisines = (await con.QueryAsync<string>(@"
+SELECT CuisineName
+FROM dbo.CuisineMaster
+WHERE IsActive = 1
+ORDER BY CuisineName;
+")).ToList();
+
+            for (int i = 0; i < cuisines.Count; i++)
+            {
+                cuisineSheet.Cells[i + 1, 1].Value = cuisines[i];
+            }
+
+            if (cuisines.Count > 0)
+            {
+                worksheet.Cells[2, 6].Value = cuisines[0];
+            }
+
+            var planValidation = worksheet.DataValidations.AddListValidation("E2:E1000");
+            planValidation.Formula.ExcelFormula = "PlanTypes!$A$1:$A$3";
+            planValidation.ShowErrorMessage = true;
+            planValidation.ErrorTitle = "Invalid Plan Type";
+            planValidation.Error = "Please select Basic, Standard, or Premium.";
+
+            if (cuisines.Count > 0)
+            {
+                var cuisineValidation = worksheet.DataValidations.AddListValidation("F2:F1000");
+                cuisineValidation.Formula.ExcelFormula = $"Cuisines!$A$1:$A${cuisines.Count}";
+                cuisineValidation.ShowErrorMessage = true;
+                cuisineValidation.ErrorTitle = "Invalid Cuisine";
+                cuisineValidation.Error = "Please select Cuisine from dropdown.";
+            }
+
+            worksheet.Cells[1, 1, 1, 6].Style.Font.Bold = true;
             worksheet.Cells.AutoFitColumns();
 
             return await Task.FromResult(package.GetAsByteArray());
@@ -427,6 +458,7 @@ WHERE Id = @Id;";
                 var password = worksheet.Cells[row, 3].Text?.Trim();
                 var isActiveText = worksheet.Cells[row, 4].Text?.Trim();
                 var planTypeText = worksheet.Cells[row, 5].Text?.Trim();
+                var cuisineNameText = worksheet.Cells[row, 6].Text?.Trim();
 
                 if (
                     string.IsNullOrWhiteSpace(userName) &&
@@ -442,6 +474,27 @@ WHERE Id = @Id;";
                     throw new Exception($"Row {row}: Email is required.");
 
                 var planType = ValidatePlanType(planTypeText, row);
+
+                int? cuisineId = null;
+
+                if (!string.IsNullOrWhiteSpace(cuisineNameText))
+                {
+                    var cuisine = await con.QueryFirstOrDefaultAsync<dynamic>(@"
+        SELECT Id 
+        FROM CuisineMaster 
+        WHERE LOWER(CuisineName) = LOWER(@CuisineName)
+        AND IsActive = 1
+    ", new { CuisineName = cuisineNameText });
+
+                    if (cuisine == null)
+                        throw new Exception($"Row {row}: Invalid Cuisine '{cuisineNameText}'");
+
+                    cuisineId = (int)cuisine.Id;
+                }
+                else
+                {
+                    throw new Exception($"Row {row}: Cuisine is required.");
+                }
 
                 bool isActive = true;
 
@@ -466,6 +519,7 @@ SET
     CompanyId = @CompanyId,
     RoleId = @RoleId,
     PlanType = @PlanType,
+    CuisineId = @CuisineId,
     IsActive = @IsActive,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate"
@@ -480,6 +534,7 @@ WHERE Id = @Id;";
                         CompanyId = companyId,
                         RoleId = defaultRoleId,
                         PlanType = planType,
+                        CuisineId = cuisineId,
                         IsActive = isActive,
                         UpdatedBy = updatedBy,
                         UpdatedDate = DateTime.Now,
@@ -501,6 +556,7 @@ INSERT INTO UserMaster
     CompanyId,
     RoleId,
     PlanType,
+    CuisineId,
     UserName,
     Email,
     PasswordHash,
@@ -516,6 +572,7 @@ VALUES
     @CompanyId,
     @RoleId,
     @PlanType,
+    @CuisineId,
     @UserName,
     @Email,
     @PasswordHash,
@@ -532,6 +589,7 @@ VALUES
                         CompanyId = companyId,
                         RoleId = defaultRoleId,
                         PlanType = planType,
+                        CuisineId = cuisineId,
                         UserName = userName,
                         Email = email,
                         PasswordHash = BCrypt.Net.BCrypt.HashPassword(password),
