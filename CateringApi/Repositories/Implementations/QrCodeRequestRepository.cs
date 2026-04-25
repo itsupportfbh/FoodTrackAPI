@@ -1529,25 +1529,34 @@ namespace CateringApi.Repositories.Implementations
             }
         }
         public async Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(
-      int companyId,
-      string planType,
-      int count,
-         int cuisineId)
+            int companyId,
+            string planType,
+            int count,
+            List<int> cuisineIds)
         {
             planType = string.IsNullOrWhiteSpace(planType) ? "Basic" : planType.Trim();
+
+            cuisineIds = cuisineIds?
+                .Where(x => x > 0)
+                .Distinct()
+                .ToList() ?? new List<int>();
+
+            if (!cuisineIds.Any())
+                return new List<QrTargetUserDto>();
 
             return await _context.UserMaster
                 .Where(x =>
                     x.CompanyId == companyId &&
                     x.IsActive &&
                     !x.IsDelete &&
-                    x.CuisineId == cuisineId &&
+                    cuisineIds.Contains(x.CuisineId) &&
                     !string.IsNullOrWhiteSpace(x.Email) &&
                     (
                         ((x.PlanType == null || x.PlanType == "") && planType.ToUpper() == "BASIC") ||
                         x.PlanType.ToUpper() == planType.ToUpper()
                     ))
-                .OrderBy(x => x.Id)
+                .OrderBy(x => x.CuisineId)
+                .ThenBy(x => x.Id)
                 .Take(count)
                 .Select(x => new QrTargetUserDto
                 {

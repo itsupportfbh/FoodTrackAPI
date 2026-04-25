@@ -91,4 +91,12 @@
         public string CuisineName { get; set; }
         public decimal Qty { get; set; }
     }
+
+    public class QrTargetUserRequestDto
+    {
+        public int CompanyId { get; set; }
+        public string PlanType { get; set; } = "Basic";
+        public int Count { get; set; }
+        public List<int> CuisineIds { get; set; } = new();
+    }
 }
