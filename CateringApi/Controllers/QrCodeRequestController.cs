@@ -155,9 +155,9 @@ namespace CateringApi.Controllers
             });
         }
         [HttpGet("GetQrTargetUsers")]
-        public async Task<IActionResult> GetQrTargetUsers(int companyId, string planType, int count)
+        public async Task<IActionResult> GetQrTargetUsers(int companyId, string planType, int count,int cuisineId)
         {
-            var data = await _qrCodeRequestRepository.GetQrTargetUsersAsync(companyId, planType, count);
+            var data = await _qrCodeRequestRepository.GetQrTargetUsersAsync(companyId, planType, count,cuisineId);
             return Ok(data);
         }
     }

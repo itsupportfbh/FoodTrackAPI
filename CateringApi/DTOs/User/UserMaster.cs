@@ -22,6 +22,7 @@
         public bool IsDelete { get; set; }
 
         public string? PlanType { get; set; }
+        public int CuisineId {  get; set; }
     }
     public class UserMaster1
     {
