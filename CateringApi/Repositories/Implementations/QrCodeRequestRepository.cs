@@ -704,51 +704,84 @@ namespace CateringApi.Repositories.Implementations
                 from rh in _context.RequestHeader
                 join cm in _context.CompanyMaster on rh.CompanyId equals cm.Id
                 where rh.IsActive
-                      && rh.Id > 0
-                      && rh.CompanyId > 0
                 select new
                 {
-                    Id = rh.Id,
-                    RequestNo = rh.RequestNo,
-                    CompanyId = rh.CompanyId,
-                    CompanyName = cm.CompanyName,
-                    CompanyEmail = cm.Email,
-                    FromDate = rh.FromDate,
-                    ToDate = rh.ToDate
+                    rh.Id,
+                    rh.RequestNo,
+                    rh.CompanyId,
+                    cm.CompanyName,
+                    cm.Email,
+                    rh.FromDate,
+                    rh.ToDate
                 }
             ).ToListAsync();
 
             foreach (var req in baseRequests)
             {
-                var basePlanQty = await _context.RequestDetail
-                    .Where(x =>
-                        x.RequestHeaderId == req.Id &&
-                        x.IsActive &&
-                        x.Qty > 0)
-                    .GroupBy(x => string.IsNullOrWhiteSpace(x.PlanType) ? "Basic" : x.PlanType.Trim())
-                    .Select(g => new
+                // BASE REQUEST
+                var baseData = await (
+                    from rd in _context.RequestDetail
+                    join cu in _context.CuisineMaster on rd.CuisineId equals cu.Id into cuJoin
+                    from cu in cuJoin.DefaultIfEmpty()
+                    where rd.RequestHeaderId == req.Id
+                          && rd.IsActive
+                          && rd.Qty > 0
+                    group rd by new
                     {
-                        PlanType = g.Key,
-                        Qty = g.Sum(x => x.Qty)
-                    })
-                    .Where(x => x.Qty > 0)
-                    .ToListAsync();
+                        PlanType = string.IsNullOrWhiteSpace(rd.PlanType)
+                            ? "Basic"
+                            : rd.PlanType.Trim(),
 
-                foreach (var plan in basePlanQty)
+                        rd.CuisineId,
+
+                        CuisineName = cu != null
+                            ? cu.CuisineName
+                            : ""
+                    }
+                    into g
+                    select new
+                    {
+                        g.Key.PlanType,
+                        g.Key.CuisineId,
+                        g.Key.CuisineName,
+                        Qty = g.Sum(x => x.Qty)
+                    }
+                ).ToListAsync();
+
+                var groupedPlan = baseData
+                    .GroupBy(x => x.PlanType)
+                    .ToList();
+
+                foreach (var planGroup in groupedPlan)
                 {
+                    var planType = planGroup.Key;
+                    var totalQty = planGroup.Sum(x => x.Qty);
+
                     decimal approvedQty = await _context.QrCodeRequest
                         .Where(x =>
                             x.RequestId == req.Id &&
+                            x.OverrideId == null &&
                             x.IsActive &&
                             x.ApprovalStatus == 1 &&
-                            x.OverrideId == null &&
-                            x.PlanType == plan.PlanType)
+                            x.PlanType == planType)
                         .SumAsync(x => (decimal?)x.NoofQR) ?? 0;
 
-                    decimal pendingQty = plan.Qty - approvedQty;
+                    var pendingQty = totalQty - approvedQty;
 
                     if (pendingQty <= 0)
                         continue;
+
+                    var cuisines = planGroup
+                        .Select(x => new CuisineDropdownDto
+                        {
+                            CuisineId = x.CuisineId,
+                            CuisineName = x.CuisineName,
+                            Qty = x.Qty
+                        })
+                        .ToList();
+
+                    var cuisineSummary = string.Join(", ",
+                        cuisines.Select(x => $"{x.CuisineName}({x.Qty})"));
 
                     result.Add(new RequestDropdownDto
                     {
@@ -757,62 +790,93 @@ namespace CateringApi.Repositories.Implementations
                         RequestNo = req.RequestNo,
                         CompanyId = req.CompanyId,
                         CompanyName = req.CompanyName,
-                        CompanyEmail = req.CompanyEmail,
+                        CompanyEmail = req.Email,
                         Qty = pendingQty,
                         FromDate = req.FromDate,
                         TillDate = req.ToDate,
                         SourceType = "REQUEST_PENDING",
-                        PlanType = plan.PlanType,
+                        PlanType = planType,
+
+                        // CuisineId + CuisineName list
+                        Cuisines = cuisines,
+
                         DisplayText =
-                            $"{req.RequestNo} - {req.CompanyName} - {plan.PlanType} - {req.FromDate:dd-MM-yyyy} to {req.ToDate:dd-MM-yyyy} - Qty {pendingQty}"
+                            $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - Qty {pendingQty}"
                     });
                 }
 
+                // OVERRIDE REQUEST
                 var overrides = await _context.RequestOverride
-                    .Where(x =>
-                        x.RequestHeaderId == req.Id &&
-                        x.IsActive)
-                    .OrderBy(x => x.FromDate)
-                    .ThenBy(x => x.Id)
+                    .Where(x => x.RequestHeaderId == req.Id && x.IsActive)
                     .ToListAsync();
 
                 foreach (var ov in overrides)
                 {
-                    var overridePlanQty = await (
+                    var overrideData = await (
                         from rod in _context.RequestOverrideDetail
                         join rd in _context.RequestDetail on rod.RequestDetailId equals rd.Id
+                        join cu in _context.CuisineMaster on rd.CuisineId equals cu.Id into cuJoin
+                        from cu in cuJoin.DefaultIfEmpty()
                         where rod.RequestOverrideId == ov.Id
                               && rod.IsActive
                               && !rod.IsCancelled
-                              && rd.RequestHeaderId == req.Id
-                              && rd.IsActive
                               && rod.OverrideQty > 0
-                        group rod by string.IsNullOrWhiteSpace(rd.PlanType) ? "Basic" : rd.PlanType.Trim()
+                        group rod by new
+                        {
+                            PlanType = string.IsNullOrWhiteSpace(rd.PlanType)
+                                ? "Basic"
+                                : rd.PlanType.Trim(),
+
+                            rd.CuisineId,
+
+                            CuisineName = cu != null
+                                ? cu.CuisineName
+                                : ""
+                        }
                         into g
                         select new
                         {
-                            PlanType = g.Key,
+                            g.Key.PlanType,
+                            g.Key.CuisineId,
+                            g.Key.CuisineName,
                             Qty = g.Sum(x => x.OverrideQty)
                         }
-                    )
-                    .Where(x => x.Qty > 0)
-                    .ToListAsync();
+                    ).ToListAsync();
 
-                    foreach (var plan in overridePlanQty)
+                    var groupedOverride = overrideData
+                        .GroupBy(x => x.PlanType)
+                        .ToList();
+
+                    foreach (var planGroup in groupedOverride)
                     {
+                        var planType = planGroup.Key;
+                        var totalQty = planGroup.Sum(x => x.Qty);
+
                         decimal approvedQty = await _context.QrCodeRequest
                             .Where(x =>
                                 x.RequestId == req.Id &&
                                 x.OverrideId == ov.Id &&
                                 x.IsActive &&
                                 x.ApprovalStatus == 1 &&
-                                x.PlanType == plan.PlanType)
+                                x.PlanType == planType)
                             .SumAsync(x => (decimal?)x.NoofQR) ?? 0;
 
-                        decimal pendingQty = plan.Qty - approvedQty;
+                        var pendingQty = totalQty - approvedQty;
 
                         if (pendingQty <= 0)
                             continue;
+
+                        var cuisines = planGroup
+                            .Select(x => new CuisineDropdownDto
+                            {
+                                CuisineId = x.CuisineId,
+                                CuisineName = x.CuisineName,
+                                Qty = x.Qty
+                            })
+                            .ToList();
+
+                        var cuisineSummary = string.Join(", ",
+                            cuisines.Select(x => $"{x.CuisineName}({x.Qty})"));
 
                         result.Add(new RequestDropdownDto
                         {
@@ -821,31 +885,31 @@ namespace CateringApi.Repositories.Implementations
                             RequestNo = req.RequestNo,
                             CompanyId = req.CompanyId,
                             CompanyName = req.CompanyName,
-                            CompanyEmail = req.CompanyEmail,
+                            CompanyEmail = req.Email,
                             Qty = pendingQty,
                             FromDate = ov.FromDate,
                             TillDate = ov.ToDate,
                             SourceType = "OVERRIDE_PENDING",
-                            PlanType = plan.PlanType,
+                            PlanType = planType,
+
+                            // CuisineId + CuisineName list
+                            Cuisines = cuisines,
+
                             DisplayText =
-                                $"{req.RequestNo} - {req.CompanyName} - {plan.PlanType} - Override #{ov.Id} - {ov.FromDate:dd-MM-yyyy} to {ov.ToDate:dd-MM-yyyy} - Qty {pendingQty}"
+                                $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - Override #{ov.Id} - Qty {pendingQty}"
                         });
                     }
                 }
             }
 
             return result
-                .Where(x =>
-                    x.RequestId > 0 &&
-                    x.CompanyId > 0 &&
-                    x.Qty > 0 &&
-                    !string.IsNullOrWhiteSpace(x.PlanType))
+                .Where(x => x.Qty > 0)
                 .OrderBy(x => x.RequestNo)
                 .ThenBy(x => x.FromDate)
                 .ThenBy(x => x.PlanType)
-                .ThenBy(x => x.OverrideId)
                 .ToList();
         }
+
 
         public async Task<ApiResponseDto> AddUpdateQrWithImagesAsync(QrCodeRequestModel model)
         {
@@ -1427,8 +1491,8 @@ namespace CateringApi.Repositories.Implementations
         public async Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(
       int companyId,
       string planType,
-      int cuisineId,
-      int count)
+      int count,
+         int cuisineId)
         {
             planType = string.IsNullOrWhiteSpace(planType) ? "Basic" : planType.Trim();
 
