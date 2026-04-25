@@ -727,7 +727,7 @@ namespace CateringApi.Repositories.Implementations
 
             foreach (var req in baseRequests)
             {
-                // BASE REQUEST
+                // ================= BASE REQUEST =================
                 var baseData = await (
                     from rd in _context.RequestDetail
                     join cu in _context.CuisineMaster on rd.CuisineId equals cu.Id into cuJoin
@@ -757,25 +757,23 @@ namespace CateringApi.Repositories.Implementations
                     }
                 ).ToListAsync();
 
-                var groupedPlan = baseData
-                    .GroupBy(x => x.PlanType)
-                    .ToList();
+                var groupedPlan = baseData.GroupBy(x => x.PlanType).ToList();
 
                 foreach (var planGroup in groupedPlan)
                 {
                     var planType = planGroup.Key;
                     var totalQty = planGroup.Sum(x => x.Qty);
 
-                    decimal approvedQty = await _context.QrCodeRequest
+                    decimal usedQty = await _context.QrCodeRequest
                         .Where(x =>
                             x.RequestId == req.Id &&
                             x.OverrideId == null &&
                             x.IsActive &&
-                            x.ApprovalStatus == 1 &&
+                            (x.ApprovalStatus == 0 || x.ApprovalStatus == 1) &&
                             x.PlanType == planType)
                         .SumAsync(x => (decimal?)x.NoofQR) ?? 0;
 
-                    var pendingQty = totalQty - approvedQty;
+                    var pendingQty = totalQty - usedQty;
 
                     if (pendingQty <= 0)
                         continue;
@@ -805,16 +803,13 @@ namespace CateringApi.Repositories.Implementations
                         TillDate = req.ToDate,
                         SourceType = "REQUEST_PENDING",
                         PlanType = planType,
-
-                        // CuisineId + CuisineName list
                         Cuisines = cuisines,
-
                         DisplayText =
                             $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - Qty {pendingQty}"
                     });
                 }
 
-                // OVERRIDE REQUEST
+                // ================= OVERRIDE REQUEST =================
                 var overrides = await _context.RequestOverride
                     .Where(x => x.RequestHeaderId == req.Id && x.IsActive)
                     .ToListAsync();
@@ -852,25 +847,23 @@ namespace CateringApi.Repositories.Implementations
                         }
                     ).ToListAsync();
 
-                    var groupedOverride = overrideData
-                        .GroupBy(x => x.PlanType)
-                        .ToList();
+                    var groupedOverride = overrideData.GroupBy(x => x.PlanType).ToList();
 
                     foreach (var planGroup in groupedOverride)
                     {
                         var planType = planGroup.Key;
                         var totalQty = planGroup.Sum(x => x.Qty);
 
-                        decimal approvedQty = await _context.QrCodeRequest
+                        decimal usedQty = await _context.QrCodeRequest
                             .Where(x =>
                                 x.RequestId == req.Id &&
                                 x.OverrideId == ov.Id &&
                                 x.IsActive &&
-                                x.ApprovalStatus == 1 &&
+                                (x.ApprovalStatus == 0 || x.ApprovalStatus == 1) &&
                                 x.PlanType == planType)
                             .SumAsync(x => (decimal?)x.NoofQR) ?? 0;
 
-                        var pendingQty = totalQty - approvedQty;
+                        var pendingQty = totalQty - usedQty;
 
                         if (pendingQty <= 0)
                             continue;
@@ -900,10 +893,7 @@ namespace CateringApi.Repositories.Implementations
                             TillDate = ov.ToDate,
                             SourceType = "OVERRIDE_PENDING",
                             PlanType = planType,
-
-                            // CuisineId + CuisineName list
                             Cuisines = cuisines,
-
                             DisplayText =
                                 $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - Override #{ov.Id} - Qty {pendingQty}"
                         });
