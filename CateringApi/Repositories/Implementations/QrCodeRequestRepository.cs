@@ -47,7 +47,10 @@ namespace CateringApi.Repositories.Implementations
         {
             return string.IsNullOrWhiteSpace(planType) ? "Basic" : planType.Trim();
         }
-
+        private static string NormalizePlanTypeUpper(string? planType)
+        {
+            return NormalizePlanType(planType).ToUpper();
+        }
         private static string GetPlanTypeShortCode(string? planType)
         {
             var value = NormalizePlanType(planType).ToUpper();
@@ -233,10 +236,11 @@ namespace CateringApi.Repositories.Implementations
                     };
                 }
 
-                var request = await _context.RequestHeader
-                    .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive);
+                var requestExists = await _context.RequestHeader
+                    .AsNoTracking()
+                    .AnyAsync(x => x.Id == model.RequestId && x.IsActive);
 
-                if (request == null)
+                if (!requestExists)
                 {
                     return new ApiResponse
                     {
@@ -245,7 +249,9 @@ namespace CateringApi.Repositories.Implementations
                     };
                 }
 
-                string planType = NormalizePlanType(model.PlanType ?? request.PlanType);
+                string planType = NormalizePlanType(model.PlanType);
+                model.PlanType = planType;
+
                 int requiredQty = model.NoofQR;
 
                 if (requiredQty <= 0)
@@ -258,10 +264,10 @@ namespace CateringApi.Repositories.Implementations
                 }
 
                 var validation = await ValidateCompanyUserCountAsync(
-     model.RequestId,
-     model.OverrideId,
-     model.PlanType
- );
+                    model.RequestId,
+                    model.OverrideId,
+                    planType
+                );
 
                 if (!validation.IsAllowed)
                 {
@@ -274,6 +280,8 @@ namespace CateringApi.Repositories.Implementations
                             redirectTo = "/users/list",
                             companyId = validation.CompanyId,
                             planType = planType,
+                            cuisineId = validation.CuisineId,
+                            cuisineName = validation.CuisineName,
                             requiredCount = validation.RequiredCount,
                             availableUserCount = validation.AvailableUserCount,
                             missingUserCount = validation.MissingUserCount
@@ -284,6 +292,7 @@ namespace CateringApi.Repositories.Implementations
                 var qrResults = new List<QrResultDto>();
 
                 string planCode = GetPlanTypeShortCode(planType);
+
                 string logoPath = Path.Combine(
                     Directory.GetCurrentDirectory(),
                     "wwwroot",
@@ -1015,16 +1024,32 @@ namespace CateringApi.Repositories.Implementations
                     };
                 }
 
-                int? safeOverrideId = (model.OverrideId.HasValue && model.OverrideId.Value > 0)
+                int? safeOverrideId = model.OverrideId.HasValue && model.OverrideId.Value > 0
                     ? model.OverrideId.Value
                     : null;
 
-                // STEP 1: Validate available users before submit for approval
+                var requestExists = await _context.RequestHeader
+                    .AsNoTracking()
+                    .AnyAsync(x => x.Id == model.RequestId && x.IsActive);
+
+                if (!requestExists)
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "Request not found.",
+                        MessageType = "warning"
+                    };
+                }
+
+                string planType = NormalizePlanType(model.PlanType);
+                model.PlanType = planType;
+
                 var validation = await ValidateCompanyUserCountAsync(
-     model.RequestId,
-     safeOverrideId,
-     model.PlanType
- );
+                    model.RequestId,
+                    safeOverrideId,
+                    planType
+                );
 
                 if (!validation.IsAllowed)
                 {
@@ -1047,13 +1072,13 @@ namespace CateringApi.Repositories.Implementations
                     };
                 }
 
-                // STEP 2: Prevent duplicate pending request for same segment
                 var alreadyPending = await _context.QrCodeRequest.AnyAsync(x =>
                     x.IsActive &&
                     x.ApprovalStatus == 0 &&
                     x.RequestId == model.RequestId &&
                     x.CompanyId == model.CompanyId &&
                     (x.OverrideId ?? 0) == (safeOverrideId ?? 0) &&
+                    x.PlanType == planType &&
                     x.QRValidFrom.Date == model.QRValidFrom.Date &&
                     x.QRValidTill.Date == model.QRValidTill.Date);
 
@@ -1067,13 +1092,13 @@ namespace CateringApi.Repositories.Implementations
                     };
                 }
 
-                // STEP 3: Prevent already-approved same segment duplicate
                 var alreadyApproved = await _context.QrCodeRequest.AnyAsync(x =>
                     x.IsActive &&
                     x.ApprovalStatus == 1 &&
                     x.RequestId == model.RequestId &&
                     x.CompanyId == model.CompanyId &&
                     (x.OverrideId ?? 0) == (safeOverrideId ?? 0) &&
+                    x.PlanType == planType &&
                     x.QRValidFrom.Date == model.QRValidFrom.Date &&
                     x.QRValidTill.Date == model.QRValidTill.Date);
 
@@ -1090,14 +1115,14 @@ namespace CateringApi.Repositories.Implementations
                 var entity = new QrCodeRequest
                 {
                     CompanyId = model.CompanyId,
-                    CompanyName = model.CompanyName,
-                    CompanyEmail = model.CompanyEmail,
+                    CompanyName = model.CompanyName ?? "",
+                    CompanyEmail = model.CompanyEmail ?? "",
                     RequestId = model.RequestId,
                     OverrideId = safeOverrideId,
                     NoofQR = model.NoofQR,
                     QRValidFrom = model.QRValidFrom,
                     QRValidTill = model.QRValidTill,
-                    PlanType = model.PlanType,
+                    PlanType = planType,
                     IsActive = true,
                     ApprovalStatus = 0,
                     RequestedBy = model.CreatedBy,
@@ -1179,12 +1204,15 @@ namespace CateringApi.Repositories.Implementations
                     };
                 }
 
+                string safePlanType = NormalizePlanType(qrRequest.PlanType);
+
                 var existingApproved = await _context.QrCodeRequest.AnyAsync(x =>
                     x.Id != qrRequest.Id &&
                     x.IsActive &&
                     x.ApprovalStatus == 1 &&
                     x.RequestId == qrRequest.RequestId &&
                     (x.OverrideId ?? 0) == (qrRequest.OverrideId ?? 0) &&
+                    x.PlanType == safePlanType &&
                     x.QRValidFrom.Date == qrRequest.QRValidFrom.Date &&
                     x.QRValidTill.Date == qrRequest.QRValidTill.Date);
 
@@ -1202,14 +1230,14 @@ namespace CateringApi.Repositories.Implementations
                 {
                     Id = qrRequest.Id,
                     CompanyId = qrRequest.CompanyId,
-                    CompanyName = qrRequest.CompanyName,
-                    CompanyEmail = qrRequest.CompanyEmail,
+                    CompanyName = qrRequest.CompanyName ?? "",
+                    CompanyEmail = qrRequest.CompanyEmail ?? "",
                     RequestId = qrRequest.RequestId,
                     OverrideId = qrRequest.OverrideId,
                     NoofQR = qrRequest.NoofQR,
                     QRValidFrom = qrRequest.QRValidFrom,
                     QRValidTill = qrRequest.QRValidTill,
-                    PlanType = qrRequest.PlanType,
+                    PlanType = safePlanType,
                     IsActive = qrRequest.IsActive,
                     CreatedBy = qrRequest.CreatedBy,
                     UpdatedBy = approvedBy
@@ -1217,28 +1245,16 @@ namespace CateringApi.Repositories.Implementations
 
                 var qrResponse = await GenerateUniqueQrs(generateModel);
 
-                if (qrResponse == null)
-                {
-                    await transaction.RollbackAsync();
-                    return new ApiResponseDto
-                    {
-                        IsSuccess = false,
-                        Message = "QR generation failed.",
-                        MessageType = "error"
-                    };
-                }
-
-                // IMPORTANT
-                if (!qrResponse.IsSuccess)
+                if (qrResponse == null || !qrResponse.IsSuccess)
                 {
                     await transaction.RollbackAsync();
 
                     return new ApiResponseDto
                     {
                         IsSuccess = false,
-                        Message = qrResponse.Message,
+                        Message = qrResponse?.Message ?? "QR generation failed.",
                         MessageType = "warning",
-                        Data = qrResponse.Data
+                        Data = qrResponse?.Data
                     };
                 }
 
@@ -1247,6 +1263,7 @@ namespace CateringApi.Repositories.Implementations
                 if (qrResults == null || !qrResults.Any())
                 {
                     await transaction.RollbackAsync();
+
                     return new ApiResponseDto
                     {
                         IsSuccess = false,
@@ -1281,6 +1298,7 @@ namespace CateringApi.Repositories.Implementations
                     else
                     {
                         await transaction.RollbackAsync();
+
                         return new ApiResponseDto
                         {
                             IsSuccess = false,
@@ -1292,12 +1310,12 @@ namespace CateringApi.Repositories.Implementations
                     var qrImage = new QrImage
                     {
                         Qrcoderequestid = qrRequest.Id,
-                        QrCodeText = qr.Text,
+                        QrCodeText = qr.Text ?? "",
                         QrCodeImage = imageBytes,
                         IsActive = true,
                         SerialNo = qr.SerialNo,
-                        UniqueCode = qr.UniqueCode,
-                        PlanType = qrRequest.PlanType,
+                        UniqueCode = qr.UniqueCode ?? "",
+                        PlanType = safePlanType,
                         IsUsed = false,
                         UsedDate = null,
                         CreatedDate = DateTime.UtcNow,
@@ -1310,11 +1328,11 @@ namespace CateringApi.Repositories.Implementations
                     await _context.SaveChangesAsync();
 
                     var assignedUserIds = await _context.QrUserAssignment
-      .Where(x => x.QrCodeRequestId == qrRequest.Id && x.IsActive)
-      .Select(x => x.UserId)
-      .ToListAsync();
+                        .Where(x => x.QrCodeRequestId == qrRequest.Id && x.IsActive)
+                        .Select(x => x.UserId)
+                        .ToListAsync();
 
-                    string planType = NormalizePlanType(qrRequest.PlanType).ToUpper();
+                    string planTypeUpper = safePlanType.ToUpper();
 
                     var user = await _context.UserMaster
                         .Where(x =>
@@ -1322,9 +1340,10 @@ namespace CateringApi.Repositories.Implementations
                             x.IsActive &&
                             !x.IsDelete &&
                             !assignedUserIds.Contains(x.Id) &&
+                            !string.IsNullOrWhiteSpace(x.Email) &&
                             (
-                                ((x.PlanType == null || x.PlanType == "") && planType == "BASIC") ||
-                                x.PlanType.ToUpper() == planType
+                                ((x.PlanType == null || x.PlanType == "") && planTypeUpper == "BASIC") ||
+                                x.PlanType.ToUpper() == planTypeUpper
                             ))
                         .OrderBy(x => x.Id)
                         .FirstOrDefaultAsync();
@@ -1336,7 +1355,7 @@ namespace CateringApi.Repositories.Implementations
                         return new ApiResponseDto
                         {
                             IsSuccess = false,
-                            Message = $"No available {planType} user found for QR assignment.",
+                            Message = $"No available {safePlanType} user found for QR assignment.",
                             MessageType = "warning"
                         };
                     }
@@ -1349,7 +1368,7 @@ namespace CateringApi.Repositories.Implementations
                         CompanyId = qrRequest.CompanyId,
                         RequestId = qrRequest.RequestId,
                         OverrideId = qrRequest.OverrideId,
-                        PlanType = planType,
+                        PlanType = safePlanType,
                         UniqueCode = qr.UniqueCode ?? "",
                         Email = user.Email ?? "",
                         IsEmailSent = false,
@@ -1360,6 +1379,7 @@ namespace CateringApi.Repositories.Implementations
                     });
                 }
 
+                qrRequest.PlanType = safePlanType;
                 qrRequest.ApprovalStatus = 1;
                 qrRequest.ApprovedBy = approvedBy;
                 qrRequest.ApprovedDate = DateTime.UtcNow;
@@ -1390,7 +1410,6 @@ namespace CateringApi.Repositories.Implementations
                 };
             }
         }
-
         public async Task<string> RejectQrRequestAsync(int qrCodeRequestId, int rejectedBy, string reason)
         {
             if (qrCodeRequestId <= 0)
@@ -1461,32 +1480,63 @@ namespace CateringApi.Repositories.Implementations
             await SendQrEmailAsync(emailPayload);
         }
         public async Task<QrUserCountValidationDto> ValidateCompanyUserCountAsync(
-      int requestId,
-      int? overrideId,
-      string? planType)
+       int requestId,
+       int? overrideId,
+       string? planType)
         {
             using var con = Connection;
 
-            var result = await con.QueryFirstOrDefaultAsync<QrUserCountValidationDto>(
-                "dbo.sp_Qr_ValidateCompanyUserCount",
-                new
-                {
-                    RequestId = requestId,
-                    OverrideId = overrideId,
-                    PlanType = planType
-                },
-                commandType: CommandType.StoredProcedure);
+            string safePlanType = NormalizePlanType(planType);
 
-            return result ?? new QrUserCountValidationDto
+            try
             {
-                IsAllowed = false,
-                Message = "Unable to validate company user count.",
-                CompanyId = 0,
-                PlanType = planType ?? "Basic",
-                RequiredCount = 0,
-                AvailableUserCount = 0,
-                MissingUserCount = 0
-            };
+                var result = await con.QueryFirstOrDefaultAsync<QrUserCountValidationDto>(
+                    "dbo.sp_Qr_ValidateCompanyUserCount",
+                    new
+                    {
+                        RequestId = requestId,
+                        OverrideId = overrideId,
+                        PlanType = safePlanType
+                    },
+                    commandType: CommandType.StoredProcedure);
+
+                if (result == null)
+                {
+                    return new QrUserCountValidationDto
+                    {
+                        IsAllowed = false,
+                        Message = "Unable to validate company user count.",
+                        CompanyId = 0,
+                        PlanType = safePlanType,
+                        CuisineId = 0,
+                        CuisineName = "",
+                        RequiredCount = 0,
+                        AvailableUserCount = 0,
+                        MissingUserCount = 0
+                    };
+                }
+
+                result.Message ??= "";
+                result.PlanType = NormalizePlanType(result.PlanType);
+                result.CuisineName ??= "";
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return new QrUserCountValidationDto
+                {
+                    IsAllowed = false,
+                    Message = ex.Message,
+                    CompanyId = 0,
+                    PlanType = safePlanType,
+                    CuisineId = 0,
+                    CuisineName = "",
+                    RequiredCount = 0,
+                    AvailableUserCount = 0,
+                    MissingUserCount = 0
+                };
+            }
         }
         public async Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(
       int companyId,
