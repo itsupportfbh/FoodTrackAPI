@@ -19,14 +19,16 @@ namespace CateringApi.Repositories.Implementations
 
         public QrImage? GetQrImageByUniqueCode(string uniqueCode)
         {
+            var actualCode = ExtractUniqueCodeFromScannedText(uniqueCode);
+
             return _context.QrImage
-                .FirstOrDefault(x => x.UniqueCode == uniqueCode && x.IsActive == true);
+                .FirstOrDefault(x => x.UniqueCode == actualCode && x.IsActive);
         }
 
         public async Task<RequestHeader?> GetQrRequestByIdAsync(int requestId)
         {
             return await _context.RequestHeader
-                .FirstOrDefaultAsync(r => r.Id == requestId && r.IsActive == true);
+                .FirstOrDefaultAsync(r => r.Id == requestId && r.IsActive);
         }
 
         public async Task MarkQrAsUsedAsync(int qrImageId, DateTime usedDate)
@@ -41,32 +43,68 @@ namespace CateringApi.Repositories.Implementations
             await _context.SaveChangesAsync();
         }
 
-        public async Task DeactivateRequestAndImagesAsync(int Qrcoderequestid, string UniqueCode)
+        public async Task DeactivateRequestAndImagesAsync(int qrcoderequestid, string uniqueCode)
         {
-            var images = await _context.QrImage
-                .Where(q => q.Qrcoderequestid == Qrcoderequestid && q.UniqueCode == UniqueCode).FirstOrDefaultAsync();
+            var actualCode = ExtractUniqueCodeFromScannedText(uniqueCode);
 
-            if (images != null)
+            var image = await _context.QrImage
+                .FirstOrDefaultAsync(q =>
+                    q.Qrcoderequestid == qrcoderequestid &&
+                    q.UniqueCode == actualCode);
+
+            if (image != null)
             {
-                images.IsActive = false;
+                image.IsActive = false;
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        private static string NormalizePlanType(string? planType)
+        {
+            return string.IsNullOrWhiteSpace(planType) ? "Basic" : planType.Trim();
+        }
+
+        private static string ExtractUniqueCodeFromScannedText(string scannedText)
+        {
+            if (string.IsNullOrWhiteSpace(scannedText))
+                return string.Empty;
+
+            scannedText = scannedText.Trim();
+
+            // Supports new QR text format:
+            // PLAN:Premium|CODE:CSPLABC...
+            if (scannedText.StartsWith("PLAN:", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = scannedText.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                var codePart = parts.FirstOrDefault(x =>
+                    x.StartsWith("CODE:", StringComparison.OrdinalIgnoreCase));
+
+                if (!string.IsNullOrWhiteSpace(codePart))
+                    return codePart.Substring(5).Trim();
             }
 
-            await _context.SaveChangesAsync();
+            // Old format - directly unique code
+            return scannedText;
         }
 
-        private static TimeSpan TrimToMinute(TimeSpan value)
+        private static string? ExtractPlanTypeFromScannedText(string scannedText)
         {
-            return new TimeSpan(value.Hours, value.Minutes, 0);
-        }
+            if (string.IsNullOrWhiteSpace(scannedText))
+                return null;
 
-        private static bool IsWithinSession(TimeSpan now, TimeSpan from, TimeSpan to)
-        {
-            // Normal session: 08:00 to 10:00
-            if (from <= to)
-                return now >= from && now <= to;
+            scannedText = scannedText.Trim();
 
-            // Overnight session: 23:00 to 02:00
-            return now >= from || now <= to;
+            if (!scannedText.StartsWith("PLAN:", StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            var parts = scannedText.Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var planPart = parts.FirstOrDefault(x =>
+                x.StartsWith("PLAN:", StringComparison.OrdinalIgnoreCase));
+
+            if (string.IsNullOrWhiteSpace(planPart))
+                return null;
+
+            return planPart.Substring(5).Trim();
         }
 
         private async Task AddScanLogAsync(
@@ -107,8 +145,14 @@ namespace CateringApi.Repositories.Implementations
             if (string.IsNullOrWhiteSpace(uniqueCode))
                 return Fail("QR code is required.");
 
+            string actualCode = ExtractUniqueCodeFromScannedText(uniqueCode);
+            string? scannedPlanType = ExtractPlanTypeFromScannedText(uniqueCode);
+
+            if (string.IsNullOrWhiteSpace(actualCode))
+                return Fail("Invalid QR code.");
+
             var qrImage = await _context.QrImage
-                .FirstOrDefaultAsync(x => x.UniqueCode == uniqueCode && x.IsActive);
+                .FirstOrDefaultAsync(x => x.UniqueCode == actualCode && x.IsActive);
 
             if (qrImage == null)
                 return Fail("Invalid QR code.");
@@ -119,18 +163,31 @@ namespace CateringApi.Repositories.Implementations
             if (qrCodeRequest == null)
                 return Fail("QR request not found.");
 
+            var requestHeader = await _context.RequestHeader
+                .FirstOrDefaultAsync(x => x.Id == qrCodeRequest.RequestId && x.IsActive);
+
+            if (requestHeader == null)
+                return Fail("Request not found.");
+
+            // PlanType validation
+            string requestPlanType = NormalizePlanType(requestHeader.PlanType);
+            string qrRequestPlanType = NormalizePlanType(qrCodeRequest.PlanType);
+            string finalQrPlanType = !string.IsNullOrWhiteSpace(scannedPlanType)
+                ? NormalizePlanType(scannedPlanType)
+                : qrRequestPlanType;
+
+            if (!string.Equals(requestPlanType, qrRequestPlanType, StringComparison.OrdinalIgnoreCase))
+                return Fail($"Plan type mismatch. Request plan is {requestPlanType}, QR request plan is {qrRequestPlanType}.");
+
+            if (!string.Equals(requestPlanType, finalQrPlanType, StringComparison.OrdinalIgnoreCase))
+                return Fail($"Scanned QR plan type does not match request plan. Expected {requestPlanType}, scanned {finalQrPlanType}.");
+
             // QR batch validity only
             if (today < qrCodeRequest.QRValidFrom.Date)
                 return Fail($"QR is not yet valid. Valid from {qrCodeRequest.QRValidFrom:dd-MM-yyyy}.");
 
             if (today > qrCodeRequest.QRValidTill.Date)
                 return Fail("QR validity period has ended. Access denied.");
-
-            var requestHeader = await _context.RequestHeader
-                .FirstOrDefaultAsync(x => x.Id == qrCodeRequest.RequestId && x.IsActive);
-
-            if (requestHeader == null)
-                return Fail("Request not found.");
 
             // Company-specific session timing
             var sessionList = await (
@@ -159,11 +216,10 @@ namespace CateringApi.Repositories.Implementations
             if (sessionList == null || sessionList.Count == 0)
                 return Fail("No session timing configured for this company.");
 
-            var matchingSession = sessionList
-                .FirstOrDefault(s =>
-                    (s.FromTime <= s.ToTime && nowTime >= s.FromTime && nowTime <= s.ToTime) ||
-                    (s.FromTime > s.ToTime && (nowTime >= s.FromTime || nowTime <= s.ToTime))
-                );
+            var matchingSession = sessionList.FirstOrDefault(s =>
+                (s.FromTime <= s.ToTime && nowTime >= s.FromTime && nowTime <= s.ToTime) ||
+                (s.FromTime > s.ToTime && (nowTime >= s.FromTime || nowTime <= s.ToTime))
+            );
 
             if (matchingSession == null)
                 return Fail("Scanning not allowed at this time for the company's session timing.");
@@ -237,7 +293,7 @@ namespace CateringApi.Repositories.Implementations
                 SessionId = matchingSession.SessionId,
                 ScanDate = today,
                 ScanDateTime = now,
-                UniqueCode = uniqueCode,
+                UniqueCode = actualCode,
                 IsAllowed = true,
                 Message = "Access granted",
                 CreatedDate = now,
@@ -251,7 +307,7 @@ namespace CateringApi.Repositories.Implementations
             return new QrValidationResult
             {
                 IsAllowed = true,
-                Message = $"Access granted for {matchingSession.SessionName}. Enjoy your meal!",
+                Message = $"Access granted for {matchingSession.SessionName}. Plan: {requestPlanType}. Enjoy your meal!",
                 SessionId = matchingSession.SessionId,
                 SessionName = matchingSession.SessionName,
                 ScanTime = now
@@ -263,12 +319,11 @@ namespace CateringApi.Repositories.Implementations
             return new QrValidationResult
             {
                 IsAllowed = false,
-                Message = message
+                Message = message,
+                SessionId = null,
+                SessionName = null,
+                ScanTime = DateTime.Now
             };
         }
-
-       
-
-       
     }
 }

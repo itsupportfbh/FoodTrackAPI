@@ -49,6 +49,7 @@ namespace CateringApi.DTOs.Scanner
         public DateTime? RejectedDate { get; set; }
 
         public string? RejectionReason { get; set; }
+        public string PlanType { get; set; }
     }
     public class RejectQrDto
     {
@@ -88,5 +89,18 @@ namespace CateringApi.DTOs.Scanner
     {
         public DateTime FromDate { get; set; }
         public DateTime TillDate { get; set; }
+    }
+    public class ApiResponse
+    {
+        public bool IsSuccess { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public object? Data { get; set; }
+    }
+    public class ApiResponseDto
+    {
+        public bool IsSuccess { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public object? Data { get; set; }
+        public string MessageType { get; set; } = "success"; // success, warning, error
     }
 }

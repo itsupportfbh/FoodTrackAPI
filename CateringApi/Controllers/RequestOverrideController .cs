@@ -1,4 +1,5 @@
 ﻿using CateringApi.DTOs.RequestOverride;
+using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -48,6 +49,46 @@ namespace CateringApi.Controllers
         [HttpPost("Save")]
         public async Task<IActionResult> Save([FromBody] SaveRequestOverrideDto dto)
         {
+            if (dto == null)
+            {
+                return Ok(new SaveRequestOverrideResultDto
+                {
+                    IsSuccess = false,
+                    Message = "Invalid request payload.",
+                    MessageType = "error"
+                });
+            }
+
+            if (dto.RequestHeaderId <= 0)
+            {
+                return Ok(new SaveRequestOverrideResultDto
+                {
+                    IsSuccess = false,
+                    Message = "Request is required.",
+                    MessageType = "warning"
+                });
+            }
+
+            if (dto.FromDate.Date > dto.ToDate.Date)
+            {
+                return Ok(new SaveRequestOverrideResultDto
+                {
+                    IsSuccess = false,
+                    Message = "From date cannot be greater than To date.",
+                    MessageType = "warning"
+                });
+            }
+
+            if (dto.Lines == null || dto.Lines.Count == 0)
+            {
+                return Ok(new SaveRequestOverrideResultDto
+                {
+                    IsSuccess = false,
+                    Message = "Override details are required.",
+                    MessageType = "warning"
+                });
+            }
+
             var result = await _repository.SaveAsync(dto);
             return Ok(result);
         }

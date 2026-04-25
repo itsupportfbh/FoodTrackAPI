@@ -10,7 +10,5 @@ namespace CateringApi.Repositories.Interfaces
         Task<RequestHeader?> GetQrRequestByIdAsync(int requestId);
         Task MarkQrAsUsedAsync(int qrImageId, DateTime usedDate);
         Task DeactivateRequestAndImagesAsync(int requestId, string UniqueCode);
-
-
     }
 }

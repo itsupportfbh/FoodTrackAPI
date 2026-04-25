@@ -205,7 +205,7 @@ VALUES
             });
         }
 
-        public async Task UpdateAsync(UserMaster userMaster)
+        public async Task UpdateAsync(UserMaster1 userMaster)
         {
             if (userMaster == null)
                 throw new ArgumentNullException(nameof(userMaster));
@@ -249,9 +249,9 @@ AND (
             string query;
             object param;
 
-            if (!string.IsNullOrWhiteSpace(userMaster.Password))
+            if (!string.IsNullOrWhiteSpace(userMaster.Password1))
             {
-                userMaster.PasswordHash = BCrypt.Net.BCrypt.HashPassword(userMaster.Password);
+                userMaster.PasswordHash = BCrypt.Net.BCrypt.HashPassword(userMaster.Password1);
 
                 query = @"
 UPDATE UserMaster

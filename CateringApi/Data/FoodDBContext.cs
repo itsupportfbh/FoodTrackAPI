@@ -5,6 +5,8 @@ using CateringApi.DTOs.Master;
 using CateringApi.DTOs.Request;
 using CateringApi.DTOs.RequestOverride;
 using CateringApi.DTOs.Scanner;
+using CateringApi.DTOs.Scanner.CateringApi.DTOs.Scanner;
+using CateringApi.DTOs.User;
 using CateringApi.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -30,7 +32,10 @@ namespace CateringApi.Data
         public DbSet<CompanySessionMapping> CompanySessionMapping { get; set; }
         public DbSet<CuisinePriceHistoryDto> SessionPriceHistory { get; set; }
         public DbSet<Cuisine> CuisineMaster { get; set; }
-        public DbSet<PriceListDto> SessionPrice { get; set; }
+        public DbSet<UserMaster> UserMaster {  get; set; }
+        public DbSet<UserMaster1> UserMaster1 { get; set; }
+        public DbSet<PriceListDto> SessionPrice {  get; set; }
+        public DbSet<QrUserAssignment> QrUserAssignment { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
