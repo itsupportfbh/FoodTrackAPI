@@ -483,23 +483,7 @@ WHERE rh.IsActive = 1
             return count > 0;
         }
 
-        public async Task<IEnumerable<PlanUserCountDto>> GetPlanUserCountsAsync(int companyId)
-        {
-            using var con = _context.CreateConnection();
 
-            const string sql = @"
-SELECT
-    PlanType,
-    COUNT(1) AS UserCount
-FROM dbo.UserMaster
-WHERE CompanyId = @CompanyId
-  AND IsActive = 1
-  AND ISNULL(IsDelete, 0) = 0
-  AND ISNULL(PlanType, '') <> ''
-GROUP BY PlanType;";
-
-            return await con.QueryAsync<PlanUserCountDto>(sql, new { CompanyId = companyId });
-        }
 
 
     }
