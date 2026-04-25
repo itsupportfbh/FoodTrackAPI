@@ -1,19 +1,26 @@
 ﻿using CateringApi.Data;
 using CateringApi.DTOModel;
+using CateringApi.DTOs.Common;
 using CateringApi.DTOs.Master;
 using CateringApi.DTOs.Scanner;
 using CateringApi.DTOs.Scanner.CateringApi.DTOs.Scanner;
 using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
+using Dapper;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using QRCoder;
+using System.Data;
+using System.Data;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO.Compression;
 using System.Net;
 using System.Net.Mail;
+using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
 
 namespace CateringApi.Repositories.Implementations
 {
@@ -22,15 +29,36 @@ namespace CateringApi.Repositories.Implementations
         private readonly FoodDBContext _context;
         private readonly SmtpSettings _smtpSettings;
         private readonly IWebHostEnvironment _env;
+        private readonly IConfiguration _configuration;
 
         public QrCodeRequestRepository(
             FoodDBContext context,
             IOptions<SmtpSettings> smtpOptions,
-            IWebHostEnvironment env)
+            IWebHostEnvironment env, IConfiguration configuration)
         {
             _context = context;
             _smtpSettings = smtpOptions.Value;
             _env = env;
+            _configuration = configuration;
+        }
+        private IDbConnection Connection =>
+            new SqlConnection(_configuration.GetConnectionString("DefaultConnection"));
+        private static string NormalizePlanType(string? planType)
+        {
+            return string.IsNullOrWhiteSpace(planType) ? "Basic" : planType.Trim();
+        }
+
+        private static string GetPlanTypeShortCode(string? planType)
+        {
+            var value = NormalizePlanType(planType).ToUpper();
+
+            return value switch
+            {
+                "BASIC" => "BSC",
+                "STANDARD" => "STD",
+                "PREMIUM" => "PRM",
+                _ => new string(value.Where(char.IsLetterOrDigit).ToArray())
+            };
         }
 
         public async Task<List<QrCodeRequestModel>> GetAllQRList()
@@ -41,7 +69,7 @@ namespace CateringApi.Repositories.Implementations
                 join cm in _context.CompanyMaster on qr.CompanyId equals cm.Id
                 join ro in _context.RequestOverride on qr.OverrideId equals ro.Id into roGroup
                 from ro in roGroup.DefaultIfEmpty()
-                where qr.IsActive == true
+                where qr.IsActive
                 select new QrCodeRequestModel
                 {
                     Id = qr.Id,
@@ -50,14 +78,13 @@ namespace CateringApi.Repositories.Implementations
                     CompanyEmail = cm.Email,
                     RequestId = qr.RequestId,
                     OverrideId = qr.OverrideId,
-
                     RequestNo = qr.OverrideId != null && ro != null
                         ? rh.RequestNo + " / OVR-" + ro.Id
                         : rh.RequestNo,
-
                     NoofQR = qr.NoofQR,
                     QRValidFrom = qr.QRValidFrom,
                     QRValidTill = qr.QRValidTill,
+                    PlanType = !string.IsNullOrWhiteSpace(qr.PlanType) ? qr.PlanType : (rh.PlanType ?? "Basic"),
                     IsActive = qr.IsActive,
                     CreatedDate = qr.CreatedDate,
                     UpdatedDate = qr.UpdatedDate,
@@ -100,6 +127,7 @@ namespace CateringApi.Repositories.Implementations
 
             return result;
         }
+
         public async Task<QrCodeRequestModel> DeleteQrCode(int id, int userId)
         {
             var entity = await _context.QrCodeRequest
@@ -124,6 +152,7 @@ namespace CateringApi.Repositories.Implementations
                 NoofQR = entity.NoofQR,
                 QRValidFrom = entity.QRValidFrom,
                 QRValidTill = entity.QRValidTill,
+                PlanType = entity.PlanType,
                 IsActive = entity.IsActive,
                 CreatedDate = entity.CreatedDate,
                 UpdatedDate = entity.UpdatedDate,
@@ -132,15 +161,13 @@ namespace CateringApi.Repositories.Implementations
             };
         }
 
-        private byte[] AddLogoToQr(byte[] qrBytes, string logoPath)
+        private byte[] AddLogoToQr(byte[] qrBytes, string logoPath, string planType)
         {
-            if (!File.Exists(logoPath))
-                return qrBytes;
-
             using var qrMs = new MemoryStream(qrBytes);
             using var qrBitmap = new Bitmap(qrMs);
-            using var logoBitmap = new Bitmap(logoPath);
-            using var finalBitmap = new Bitmap(qrBitmap.Width, qrBitmap.Height);
+
+            int extraHeight = 60;
+            using var finalBitmap = new Bitmap(qrBitmap.Width, qrBitmap.Height + extraHeight);
 
             using (var graphics = Graphics.FromImage(finalBitmap))
             {
@@ -148,22 +175,44 @@ namespace CateringApi.Repositories.Implementations
                 graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 graphics.SmoothingMode = SmoothingMode.HighQuality;
                 graphics.CompositingQuality = CompositingQuality.HighQuality;
+                graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
+                // Draw QR
                 graphics.DrawImage(qrBitmap, 0, 0, qrBitmap.Width, qrBitmap.Height);
 
-                int logoSize = (int)(qrBitmap.Width * 0.18);
-                int logoX = (qrBitmap.Width - logoSize) / 2;
-                int logoY = (qrBitmap.Height - logoSize) / 2;
-                int padding = 8;
+                // Draw center logo
+                if (!string.IsNullOrWhiteSpace(logoPath) && File.Exists(logoPath))
+                {
+                    using var logoBitmap = new Bitmap(logoPath);
 
-                graphics.FillEllipse(
-                    Brushes.White,
-                    logoX - padding,
-                    logoY - padding,
-                    logoSize + (padding * 2),
-                    logoSize + (padding * 2));
+                    int logoSize = (int)(qrBitmap.Width * 0.18);
+                    int logoX = (qrBitmap.Width - logoSize) / 2;
+                    int logoY = (qrBitmap.Height - logoSize) / 2;
+                    int padding = 8;
 
-                graphics.DrawImage(logoBitmap, logoX, logoY, logoSize, logoSize);
+                    graphics.FillEllipse(
+                        Brushes.White,
+                        logoX - padding,
+                        logoY - padding,
+                        logoSize + (padding * 2),
+                        logoSize + (padding * 2));
+
+                    graphics.DrawImage(logoBitmap, logoX, logoY, logoSize, logoSize);
+                }
+
+                // Draw Plan Type text at bottom
+                string planLabel = string.IsNullOrWhiteSpace(planType) ? "BASIC" : planType.Trim().ToUpper();
+
+                using var font = new Font("Arial", 18, FontStyle.Bold);
+                using var brush = new SolidBrush(Color.Black);
+                using var sf = new StringFormat
+                {
+                    Alignment = StringAlignment.Center,
+                    LineAlignment = StringAlignment.Center
+                };
+
+                var textRect = new RectangleF(0, qrBitmap.Height, qrBitmap.Width, extraHeight);
+                graphics.DrawString(planLabel, font, brush, textRect, sf);
             }
 
             using var outputMs = new MemoryStream();
@@ -171,110 +220,172 @@ namespace CateringApi.Repositories.Implementations
             return outputMs.ToArray();
         }
 
-        public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
+        public async Task<ApiResponse> GenerateUniqueQrs(QrCodeRequest model)
         {
-            var result = new List<QrResultDto>();
-
-            if (model == null)
-                throw new Exception("Request payload is required.");
-
-            if (model.RequestId <= 0)
-                throw new Exception("Valid RequestId is required.");
-
-            if (model.CompanyId <= 0)
-                throw new Exception("Valid CompanyId is required.");
-
-            if (string.IsNullOrWhiteSpace(model.CompanyName))
-                throw new Exception("CompanyName is required.");
-
-            if (model.NoofQR <= 0)
-                throw new Exception("NoofQR must be greater than 0.");
-
-            DateTime validFrom = model.QRValidFrom.Date;
-            DateTime validTill = model.QRValidTill.Date;
-
-            if (validFrom > validTill)
-                throw new Exception("QRValidFrom cannot be greater than QRValidTill.");
-
-            var requestHeader = await _context.RequestHeader
-                .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive);
-
-            if (requestHeader == null)
-                throw new Exception("Request not found.");
-
-            var pendingItems = await GetQrPendingDropdown();
-
-            var matchedPending = pendingItems.FirstOrDefault(x =>
-                x.RequestId == model.RequestId &&
-                (x.OverrideId ?? 0) == (model.OverrideId ?? 0) &&
-                x.FromDate.Date == validFrom &&
-                x.TillDate.Date == validTill);
-
-            if (matchedPending == null)
-                throw new Exception("Selected pending segment is not available. Please refresh and try again.");
-
-            if (model.NoofQR > matchedPending.Qty)
-                throw new Exception($"Only {matchedPending.Qty} QR(s) can be generated for this segment.");
-
-            int totalQty = model.NoofQR;
-
-            string safeCompanyName = new string((model.CompanyName ?? string.Empty)
-                .Where(char.IsLetterOrDigit)
-                .ToArray())
-                .ToUpper();
-
-            string requestPart = $"RQ{model.RequestId}";
-            string overridePart = (model.OverrideId ?? 0) > 0
-                ? $"OVR{model.OverrideId.Value}"
-                : "";
-
-            string datePart = $"{validFrom:ddMMyyyy}{validTill:ddMMyyyy}";
-            string logoPath = Path.Combine(_env.WebRootPath, "Images", "CSPL Logo.png");
-
-            int alreadyGeneratedCount = await (
-                from qi in _context.QrImage
-                join qr in _context.QrCodeRequest on qi.Qrcoderequestid equals qr.Id
-                where qi.IsActive
-                      && qr.IsActive
-                      && qr.ApprovalStatus == 1
-                      && qr.RequestId == model.RequestId
-                      && (qr.OverrideId ?? 0) == (model.OverrideId ?? 0)
-                      && qr.QRValidFrom.Date == validFrom
-                      && qr.QRValidTill.Date == validTill
-                select qi.Id
-            ).CountAsync();
-
-            using var qrGenerator = new QRCodeGenerator();
-
-            for (int i = 1; i <= totalQty; i++)
+            try
             {
-                int runningSerial = alreadyGeneratedCount + i;
-
-                string uniqueCode = !string.IsNullOrWhiteSpace(overridePart)
-                    ? $"CSPL{safeCompanyName}{requestPart}{overridePart}{datePart}_{runningSerial:000}"
-                    : $"CSPL{safeCompanyName}{requestPart}{datePart}_{runningSerial:000}";
-
-                string qrText = uniqueCode;
-
-                using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.H);
-                var qrCode = new PngByteQRCode(qrData);
-
-                byte[] qrBytes = qrCode.GetGraphic(20);
-                byte[] finalQrBytes = AddLogoToQr(qrBytes, logoPath);
-
-                result.Add(new QrResultDto
+                if (model == null || model.RequestId <= 0)
                 {
-                    Text = qrText,
-                    ImageBytes = finalQrBytes,
-                    ImageBase64 = Convert.ToBase64String(finalQrBytes),
-                    UniqueCode = uniqueCode,
-                    SerialNo = runningSerial,
-                    UsedDate = null,
-                    IsUsed = false
-                });
+                    return new ApiResponse
+                    {
+                        IsSuccess = false,
+                        Message = "Valid request is required."
+                    };
+                }
+
+                var request = await _context.RequestHeader
+                    .FirstOrDefaultAsync(x => x.Id == model.RequestId && x.IsActive);
+
+                if (request == null)
+                {
+                    return new ApiResponse
+                    {
+                        IsSuccess = false,
+                        Message = "Request not found."
+                    };
+                }
+
+                string planType = NormalizePlanType(model.PlanType ?? request.PlanType);
+                int requiredQty = model.NoofQR;
+
+                if (requiredQty <= 0)
+                {
+                    return new ApiResponse
+                    {
+                        IsSuccess = false,
+                        Message = "QR quantity should be greater than 0."
+                    };
+                }
+
+                var validation = await ValidateCompanyUserCountAsync(
+     model.RequestId,
+     model.OverrideId,
+     model.PlanType
+ );
+
+                if (!validation.IsAllowed)
+                {
+                    return new ApiResponse
+                    {
+                        IsSuccess = false,
+                        Message = validation.Message,
+                        Data = new
+                        {
+                            redirectTo = "/users/list",
+                            companyId = validation.CompanyId,
+                            planType = planType,
+                            requiredCount = validation.RequiredCount,
+                            availableUserCount = validation.AvailableUserCount,
+                            missingUserCount = validation.MissingUserCount
+                        }
+                    };
+                }
+
+                var qrResults = new List<QrResultDto>();
+
+                string planCode = GetPlanTypeShortCode(planType);
+                string logoPath = Path.Combine(
+                    Directory.GetCurrentDirectory(),
+                    "wwwroot",
+                    "Images",
+                    "CSPL Logo.png"
+                );
+
+                for (int i = 1; i <= requiredQty; i++)
+                {
+                    string uniqueCode =
+                        $"CSPL-{planCode}-REQ{model.RequestId}-QR{i:D4}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
+
+                    string qrText = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        uniqueCode,
+                        requestId = model.RequestId,
+                        overrideId = model.OverrideId,
+                        companyId = model.CompanyId,
+                        planType = planType,
+                        validFrom = model.QRValidFrom.ToString("yyyy-MM-dd"),
+                        validTill = model.QRValidTill.ToString("yyyy-MM-dd")
+                    });
+
+                    using var qrGenerator = new QRCodeGenerator();
+                    using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.Q);
+                    using var qrCode = new PngByteQRCode(qrData);
+
+                    byte[] qrBytes = qrCode.GetGraphic(20);
+                    byte[] finalBytes = AddLogoToQr(qrBytes, logoPath, planType);
+
+                    qrResults.Add(new QrResultDto
+                    {
+                        Text = qrText,
+                        ImageBytes = finalBytes,
+                        ImageBase64 = Convert.ToBase64String(finalBytes),
+                        SerialNo = i,
+                        UniqueCode = uniqueCode
+                    });
+                }
+
+                return new ApiResponse
+                {
+                    IsSuccess = true,
+                    Message = $"{planType} QR codes generated successfully.",
+                    Data = qrResults
+                };
+            }
+            catch (Exception ex)
+            {
+                return new ApiResponse
+                {
+                    IsSuccess = false,
+                    Message = ex.Message
+                };
+            }
+        }
+        private async Task SendQrEmailToAssignedUsersAsync(int qrCodeRequestId)
+        {
+            var assignments = await (
+                from a in _context.QrUserAssignment
+                join qi in _context.QrImage on a.QrImageId equals qi.Id
+                where a.QrCodeRequestId == qrCodeRequestId
+                      && a.IsActive
+                      && !a.IsEmailSent
+                select new
+                {
+                    Assignment = a,
+                    Qr = qi
+                }
+            ).ToListAsync();
+
+            foreach (var item in assignments)
+            {
+                if (string.IsNullOrWhiteSpace(item.Assignment.Email))
+                    continue;
+
+                var payload = new SendEmailDto
+                {
+                    Email = item.Assignment.Email,
+                    QrItems = new List<SendQrItemDto>
+            {
+                new SendQrItemDto
+                {
+                    UniqueCode = item.Qr.UniqueCode ?? "",
+                    QrText = item.Qr.QrCodeText ?? "",
+                    QrImageBase64 = item.Qr.QrCodeImage != null
+                        ? Convert.ToBase64String(item.Qr.QrCodeImage)
+                        : "",
+                    SerialNo = item.Qr.SerialNo,
+                    IsUsed = item.Qr.IsUsed,
+                    UsedDate = item.Qr.UsedDate
+                }
+            }
+                };
+
+                await SendQrEmailAsync(payload);
+
+                item.Assignment.IsEmailSent = true;
+                item.Assignment.EmailSentDate = DateTime.UtcNow;
             }
 
-            return result;
+            await _context.SaveChangesAsync();
         }
 
         public async Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int qrcoderequestid)
@@ -349,6 +460,11 @@ namespace CateringApi.Repositories.Implementations
                 ? "qr-images"
                 : SanitizeFileName(data.CompanyName);
 
+            var qrRequest = await _context.QrCodeRequest
+                .FirstOrDefaultAsync(x => x.Id == qrcoderequestid);
+
+            string planLabel = qrRequest?.PlanType?.Trim().ToUpper() ?? "BASIC";
+
             using var memoryStream = new MemoryStream();
 
             using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, true))
@@ -368,22 +484,14 @@ namespace CateringApi.Repositories.Implementations
                                 base64 = base64[(commaIndex + 1)..];
                         }
 
-                        base64 = base64.Replace(" ", "")
-                                       .Replace("\r", "")
-                                       .Replace("\n", "");
-
                         var imageBytes = Convert.FromBase64String(base64);
 
                         if (imageBytes.Length == 0)
                             continue;
 
-                        var serialNo = img.SerialNo.HasValue
-                            ? img.SerialNo.Value.ToString()
-                            : (addedCount + 1).ToString();
+                        var serialNo = img.SerialNo ?? (addedCount + 1);
 
-                        var entryFileName = $"{requestLabel}-{serialNo}.png";
-
-                        var entry = archive.CreateEntry(entryFileName, CompressionLevel.Fastest);
+                        var entry = archive.CreateEntry($"{requestLabel}-{planLabel}.png");
 
                         using var entryStream = entry.Open();
                         await entryStream.WriteAsync(imageBytes, 0, imageBytes.Length);
@@ -400,10 +508,12 @@ namespace CateringApi.Repositories.Implementations
                     return null;
             }
 
-            memoryStream.Position = 0;
+            // 🔥 VERY IMPORTANT (after archive disposed)
+            var zipBytes = memoryStream.ToArray();
 
-            var zipFileName = $"CSPL-{companyLabel}-{requestLabel}.zip";
-            return (memoryStream.ToArray(), zipFileName);
+            var zipFileName = $"CSPL-{companyLabel}-{planLabel}.zip";
+
+            return (zipBytes, zipFileName);
         }
 
         private string SanitizeFileName(string value)
@@ -451,46 +561,31 @@ namespace CateringApi.Repositories.Implementations
 <body style='margin:0; padding:0; background-color:#f4f6f8; font-family:Arial, Helvetica, sans-serif; color:#333333;'>
   <div style='width:100%; background-color:#f4f6f8; padding:30px 0;'>
     <table role='presentation' cellspacing='0' cellpadding='0' border='0' width='100%' style='max-width:900px; margin:0 auto; background:#ffffff; border-radius:12px; overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,0.08);'>
-      
       <tr>
         <td style='background: linear-gradient(135deg, #b7410e, #e25822); padding:20px 32px;'>
           <table role='presentation' cellspacing='0' cellpadding='0' border='0' width='100%' style='width:100%; border-collapse:collapse;'>
-           <tr>
-  <td style='width:110px; vertical-align:middle; text-align:left;'>
-    <div style='display:inline-block; background-color:#ffffff; padding:10px; border-radius:12px;'>
-      <img src='cid:csplLogo'
-           alt='CSPL Logo'
-           style='display:block; width:80px; height:80px; object-fit:contain;' />
-    </div>
-  </td>
-
-  <td style='vertical-align:middle; text-align:center;'>
-  <h1 style=""
-  margin:0;
-  font-size:40px;
-  color:#ffffff;
-  font-weight:700;
-  letter-spacing:1.5px;
-  font-family: ''Cinzel'', serif;
-"">
-  CSPL
-</h1>
-    
-  </td>
-
-  <td style='width:110px;'>
-    &nbsp;
-  </td>
-</tr>
+            <tr>
+              <td style='width:110px; vertical-align:middle; text-align:left;'>
+                <div style='display:inline-block; background-color:#ffffff; padding:10px; border-radius:12px;'>
+                  <img src='cid:csplLogo'
+                       alt='CSPL Logo'
+                       style='display:block; width:80px; height:80px; object-fit:contain;' />
+                </div>
+              </td>
+              <td style='vertical-align:middle; text-align:center;'>
+                <h1 style='margin:0;font-size:40px;color:#ffffff;font-weight:700;letter-spacing:1.5px;font-family:Cinzel, serif;'>
+                  CSPL
+                </h1>
+              </td>
+              <td style='width:110px;'>&nbsp;</td>
+            </tr>
           </table>
         </td>
       </tr>
 
       <tr>
         <td style='padding:28px 32px 12px;background: linear-gradient(135deg, #f4e1c1, #e6c79c);'>
-          <p style='margin:0 0 16px; font-size:15px; line-height:1.6; color:#4b5563;'>
-            Hello,
-          </p>
+          <p style='margin:0 0 16px; font-size:15px; line-height:1.6; color:#4b5563;'>Hello,</p>
           <p style='margin:0; font-size:15px; line-height:1.6; color:#4b5563;'>
             The QR codes for your request have been generated successfully. A summary is shown below, and the QR image files are attached with this email.
           </p>
@@ -557,7 +652,6 @@ namespace CateringApi.Repositories.Implementations
           </p>
         </td>
       </tr>
-
     </table>
   </div>
 </body>
@@ -602,409 +696,394 @@ namespace CateringApi.Repositories.Implementations
             }
         }
 
-        private static int NormalizeOverrideId(int? overrideId)
-        {
-            return overrideId.HasValue && overrideId.Value > 0 ? overrideId.Value : 0;
-        }
-
-        private static bool IsWithinRange(DateTime targetFrom, DateTime targetTill, DateTime rangeFrom, DateTime rangeTill)
-        {
-            return rangeFrom.Date <= targetFrom.Date && rangeTill.Date >= targetTill.Date;
-        }
-
         public async Task<List<RequestDropdownDto>> GetQrPendingDropdown()
         {
             var result = new List<RequestDropdownDto>();
 
-            var requests = await (
-                from r in _context.RequestHeader
-                join c in _context.CompanyMaster on r.CompanyId equals c.Id
-                where r.IsActive
+            var baseRequests = await (
+                from rh in _context.RequestHeader
+                join cm in _context.CompanyMaster on rh.CompanyId equals cm.Id
+                where rh.IsActive
+                      && rh.Id > 0
+                      && rh.CompanyId > 0
                 select new
                 {
-                    RequestId = r.Id,
-                    RequestNo = r.RequestNo,
-                    CompanyId = c.Id,
-                    CompanyName = c.CompanyName,
-                    CompanyEmail = c.Email,
-                    BaseFromDate = r.FromDate,
-                    BaseToDate = r.ToDate,
-                    BaseQty = (int?)r.TotalQty
+                    Id = rh.Id,
+                    RequestNo = rh.RequestNo,
+                    CompanyId = rh.CompanyId,
+                    CompanyName = cm.CompanyName,
+                    CompanyEmail = cm.Email,
+                    FromDate = rh.FromDate,
+                    ToDate = rh.ToDate
                 }
             ).ToListAsync();
 
-            foreach (var req in requests)
+            foreach (var req in baseRequests)
             {
-                DateTime reqFrom = req.BaseFromDate.Date;
-                DateTime reqTo = req.BaseToDate.Date;
-                int baseQty = req.BaseQty ?? 0;
-
-                var overrides = await _context.RequestOverride
-                    .Where(x => x.RequestHeaderId == req.RequestId && x.IsActive)
-                    .OrderBy(x => x.FromDate)
-                    .ThenBy(x => x.Id)
-                    .Select(x => new
+                var basePlanQty = await _context.RequestDetail
+                    .Where(x =>
+                        x.RequestHeaderId == req.Id &&
+                        x.IsActive &&
+                        x.Qty > 0)
+                    .GroupBy(x => string.IsNullOrWhiteSpace(x.PlanType) ? "Basic" : x.PlanType.Trim())
+                    .Select(g => new
                     {
-                        x.Id,
-                        FromDate = x.FromDate.Date,
-                        ToDate = x.ToDate.Date,
-                        TotalQty = (int?)x.TotalQty,
-                        DifferentQty = (int?)x.DifferentQty
+                        PlanType = g.Key,
+                        Qty = g.Sum(x => x.Qty)
                     })
+                    .Where(x => x.Qty > 0)
                     .ToListAsync();
 
-                var qrBatches = await _context.QrCodeRequest
-                    .Where(x => x.RequestId == req.RequestId && x.IsActive && x.ApprovalStatus == 1)
-                    .Select(x => new
-                    {
-                        x.Id,
-                        x.CompanyId,
-                        QRValidFrom = x.QRValidFrom.Date,
-                        QRValidTill = x.QRValidTill.Date,
-                        NoofQR = (int?)x.NoofQR
-                    })
-                    .ToListAsync();
-
-                var boundaries = new List<DateTime>
-        {
-            reqFrom,
-            reqTo.AddDays(1)
-        };
-
-                foreach (var ov in overrides)
+                foreach (var plan in basePlanQty)
                 {
-                    boundaries.Add(ov.FromDate);
-                    boundaries.Add(ov.ToDate.AddDays(1));
-                }
-
-                foreach (var qr in qrBatches)
-                {
-                    boundaries.Add(qr.QRValidFrom);
-                    boundaries.Add(qr.QRValidTill.AddDays(1));
-                }
-
-                boundaries = boundaries
-                    .Distinct()
-                    .OrderBy(x => x)
-                    .ToList();
-
-                for (int i = 0; i < boundaries.Count - 1; i++)
-                {
-                    DateTime segFrom = boundaries[i].Date;
-                    DateTime segTill = boundaries[i + 1].Date.AddDays(-1);
-
-                    if (segFrom > segTill)
-                        continue;
-
-                    if (segFrom < reqFrom || segTill > reqTo)
-                        continue;
-
-                    var appliedOverride = overrides
-                        .Where(x => x.FromDate <= segFrom && x.ToDate >= segTill)
-                        .OrderByDescending(x => x.Id)
-                        .FirstOrDefault();
-
-                    int totalGeneratedQty = qrBatches
+                    decimal approvedQty = await _context.QrCodeRequest
                         .Where(x =>
-                            x.CompanyId == req.CompanyId &&
-                            x.QRValidFrom <= segFrom &&
-                            x.QRValidTill >= segTill)
-                        .Sum(x => x.NoofQR ?? 0);
+                            x.RequestId == req.Id &&
+                            x.IsActive &&
+                            x.ApprovalStatus == 1 &&
+                            x.OverrideId == null &&
+                            x.PlanType == plan.PlanType)
+                        .SumAsync(x => (decimal?)x.NoofQR) ?? 0;
 
-                    int pendingQty = 0;
-                    string sourceType = "REQUEST_PENDING";
-                    int? effectiveOverrideId = null;
-
-                    if (appliedOverride != null)
-                    {
-                        effectiveOverrideId = appliedOverride.Id;
-                        sourceType = "OVERRIDE_PENDING";
-
-                        int extraQty = appliedOverride.DifferentQty ?? 0;
-                        int overrideGeneratedQty = Math.Max(0, totalGeneratedQty - baseQty);
-                        pendingQty = extraQty - overrideGeneratedQty;
-                    }
-                    else
-                    {
-                        pendingQty = baseQty - totalGeneratedQty;
-                    }
+                    decimal pendingQty = plan.Qty - approvedQty;
 
                     if (pendingQty <= 0)
                         continue;
 
                     result.Add(new RequestDropdownDto
                     {
-                        RequestId = req.RequestId,
-                        OverrideId = effectiveOverrideId,
+                        RequestId = req.Id,
+                        OverrideId = null,
                         RequestNo = req.RequestNo,
                         CompanyId = req.CompanyId,
                         CompanyName = req.CompanyName,
                         CompanyEmail = req.CompanyEmail,
                         Qty = pendingQty,
-                        FromDate = segFrom,
-                        TillDate = segTill,
-                        SourceType = sourceType,
-                        DisplayText = effectiveOverrideId.HasValue
-                            ? $"{req.RequestNo} - {req.CompanyName} - Override #{effectiveOverrideId} - {segFrom:dd-MM-yyyy} to {segTill:dd-MM-yyyy} - Qty {pendingQty}"
-                            : $"{req.RequestNo} - {req.CompanyName} - {segFrom:dd-MM-yyyy} to {segTill:dd-MM-yyyy} - Qty {pendingQty}"
+                        FromDate = req.FromDate,
+                        TillDate = req.ToDate,
+                        SourceType = "REQUEST_PENDING",
+                        PlanType = plan.PlanType,
+                        DisplayText =
+                            $"{req.RequestNo} - {req.CompanyName} - {plan.PlanType} - {req.FromDate:dd-MM-yyyy} to {req.ToDate:dd-MM-yyyy} - Qty {pendingQty}"
                     });
+                }
+
+                var overrides = await _context.RequestOverride
+                    .Where(x =>
+                        x.RequestHeaderId == req.Id &&
+                        x.IsActive)
+                    .OrderBy(x => x.FromDate)
+                    .ThenBy(x => x.Id)
+                    .ToListAsync();
+
+                foreach (var ov in overrides)
+                {
+                    var overridePlanQty = await (
+                        from rod in _context.RequestOverrideDetail
+                        join rd in _context.RequestDetail on rod.RequestDetailId equals rd.Id
+                        where rod.RequestOverrideId == ov.Id
+                              && rod.IsActive
+                              && !rod.IsCancelled
+                              && rd.RequestHeaderId == req.Id
+                              && rd.IsActive
+                              && rod.OverrideQty > 0
+                        group rod by string.IsNullOrWhiteSpace(rd.PlanType) ? "Basic" : rd.PlanType.Trim()
+                        into g
+                        select new
+                        {
+                            PlanType = g.Key,
+                            Qty = g.Sum(x => x.OverrideQty)
+                        }
+                    )
+                    .Where(x => x.Qty > 0)
+                    .ToListAsync();
+
+                    foreach (var plan in overridePlanQty)
+                    {
+                        decimal approvedQty = await _context.QrCodeRequest
+                            .Where(x =>
+                                x.RequestId == req.Id &&
+                                x.OverrideId == ov.Id &&
+                                x.IsActive &&
+                                x.ApprovalStatus == 1 &&
+                                x.PlanType == plan.PlanType)
+                            .SumAsync(x => (decimal?)x.NoofQR) ?? 0;
+
+                        decimal pendingQty = plan.Qty - approvedQty;
+
+                        if (pendingQty <= 0)
+                            continue;
+
+                        result.Add(new RequestDropdownDto
+                        {
+                            RequestId = req.Id,
+                            OverrideId = ov.Id,
+                            RequestNo = req.RequestNo,
+                            CompanyId = req.CompanyId,
+                            CompanyName = req.CompanyName,
+                            CompanyEmail = req.CompanyEmail,
+                            Qty = pendingQty,
+                            FromDate = ov.FromDate,
+                            TillDate = ov.ToDate,
+                            SourceType = "OVERRIDE_PENDING",
+                            PlanType = plan.PlanType,
+                            DisplayText =
+                                $"{req.RequestNo} - {req.CompanyName} - {plan.PlanType} - Override #{ov.Id} - {ov.FromDate:dd-MM-yyyy} to {ov.ToDate:dd-MM-yyyy} - Qty {pendingQty}"
+                        });
+                    }
                 }
             }
 
             return result
+                .Where(x =>
+                    x.RequestId > 0 &&
+                    x.CompanyId > 0 &&
+                    x.Qty > 0 &&
+                    !string.IsNullOrWhiteSpace(x.PlanType))
                 .OrderBy(x => x.RequestNo)
                 .ThenBy(x => x.FromDate)
-                .ThenBy(x => x.TillDate)
+                .ThenBy(x => x.PlanType)
                 .ThenBy(x => x.OverrideId)
                 .ToList();
         }
 
-        public async Task<QrCodeRequestModel> AddUpdateQrWithImagesAsync(QrCodeRequestModel model)
+        public async Task<ApiResponseDto> AddUpdateQrWithImagesAsync(QrCodeRequestModel model)
         {
             if (model == null)
-                throw new ArgumentNullException(nameof(model));
+            {
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = "Invalid request data."
+                };
+            }
 
             if (model.CompanyId <= 0)
-                throw new Exception("CompanyId must be greater than 0.");
-
-            if (string.IsNullOrWhiteSpace(model.CompanyName))
-                throw new Exception("CompanyName is required.");
-
-            if (model.RequestId <= 0)
-                throw new Exception("RequestId must be greater than 0.");
+            {
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = "CompanyId must be greater than 0."
+                };
+            }
 
             if (model.NoofQR <= 0)
-                throw new Exception("NoofQR must be greater than 0.");
+            {
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = "NoofQR must be greater than 0."
+                };
+            }
 
-            if (model.QRValidFrom == default)
-                throw new Exception("QRValidFrom is required.");
+            var availableUserCount = await _context.UserMaster
+                .CountAsync(x => x.CompanyId == model.CompanyId && x.IsActive);
 
-            if (model.QRValidTill == default)
-                throw new Exception("QRValidTill is required.");
+            var missingUserCount = model.NoofQR > availableUserCount
+                ? model.NoofQR - availableUserCount
+                : 0;
 
-            if (model.QRValidFrom.Date > model.QRValidTill.Date)
-                throw new Exception("QRValidFrom cannot be greater than QRValidTill.");
+            if (missingUserCount > 0)
+            {
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = $"QR cannot be generated. Required users: {model.NoofQR}, available users: {availableUserCount}. {missingUserCount} user(s) not available.",
+                    Data = new
+                    {
+                        companyId = model.CompanyId,
+                        requiredCount = model.NoofQR,
+                        availableUserCount = availableUserCount,
+                        missingUserCount = missingUserCount
+                    }
+                };
+            }
 
-            if (model.QrImages == null || !model.QrImages.Any())
-                throw new Exception("At least one QR image is required.");
+            // normal save logic here
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
-
+            return new ApiResponseDto
+            {
+                IsSuccess = true,
+                Message = "QR request submitted for approval successfully."
+            };
+        }
+        public async Task<ApiResponseDto> SubmitQrApprovalRequestAsync(QrCodeRequestModel model)
+        {
             try
             {
-                QrCodeRequest qrRequest;
+                if (model == null)
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "Invalid request data.",
+                        MessageType = "error"
+                    };
+                }
+
+                if (model.CompanyId <= 0)
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "Company is required.",
+                        MessageType = "warning"
+                    };
+                }
+
+                if (model.RequestId <= 0)
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "Request is required.",
+                        MessageType = "warning"
+                    };
+                }
+
+                if (model.NoofQR <= 0)
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "No of QR should be greater than 0.",
+                        MessageType = "warning"
+                    };
+                }
+
                 int? safeOverrideId = (model.OverrideId.HasValue && model.OverrideId.Value > 0)
                     ? model.OverrideId.Value
                     : null;
 
-                if (model.Id > 0)
+                // STEP 1: Validate available users before submit for approval
+                var validation = await ValidateCompanyUserCountAsync(
+     model.RequestId,
+     safeOverrideId,
+     model.PlanType
+ );
+
+                if (!validation.IsAllowed)
                 {
-                    qrRequest = await _context.QrCodeRequest
-                        .FirstOrDefaultAsync(x => x.Id == model.Id && x.IsActive)
-                        ?? throw new Exception("QR request not found.");
-
-                    qrRequest.CompanyId = model.CompanyId;
-                    qrRequest.CompanyName = model.CompanyName.Trim();
-                    qrRequest.CompanyEmail = string.IsNullOrWhiteSpace(model.CompanyEmail)
-                        ? null
-                        : model.CompanyEmail.Trim();
-                    qrRequest.RequestId = model.RequestId;
-                    qrRequest.OverrideId = safeOverrideId;
-                    qrRequest.NoofQR = model.NoofQR;
-                    qrRequest.QRValidFrom = model.QRValidFrom;
-                    qrRequest.QRValidTill = model.QRValidTill;
-                    qrRequest.IsActive = model.IsActive;
-                    qrRequest.UpdatedDate = DateTime.UtcNow;
-                    qrRequest.UpdatedBy = model.UpdatedBy > 0 ? model.UpdatedBy : model.CreatedBy;
-
-                    _context.QrCodeRequest.Update(qrRequest);
-
-                    var oldImages = await _context.QrImage
-                        .Where(x => x.Qrcoderequestid == qrRequest.Id && x.IsActive)
-                        .ToListAsync();
-
-                    foreach (var old in oldImages)
+                    return new ApiResponseDto
                     {
-                        old.IsActive = false;
-                        old.UpdatedDate = DateTime.UtcNow;
-                        old.UpdatedBy = (model.UpdatedBy > 0 ? model.UpdatedBy : model.CreatedBy).ToString();
-                    }
-                }
-                else
-                {
-                    qrRequest = new QrCodeRequest
-                    {
-                        CompanyId = model.CompanyId,
-                        CompanyName = model.CompanyName.Trim(),
-                        CompanyEmail = string.IsNullOrWhiteSpace(model.CompanyEmail)
-                            ? null
-                            : model.CompanyEmail.Trim(),
-                        RequestId = model.RequestId,
-                        OverrideId = safeOverrideId,
-                        NoofQR = model.NoofQR,
-                        QRValidFrom = model.QRValidFrom,
-                        QRValidTill = model.QRValidTill,
-                        IsActive = model.IsActive,
-                        CreatedDate = DateTime.UtcNow,
-                        CreatedBy = model.CreatedBy,
-                        UpdatedDate = null,
-                        UpdatedBy = 0
+                        IsSuccess = false,
+                        Message = validation.Message,
+                        MessageType = "warning",
+                        Data = new
+                        {
+                            redirectTo = "/users/list",
+                            companyId = validation.CompanyId,
+                            requiredCount = validation.RequiredCount,
+                            availableUserCount = validation.AvailableUserCount,
+                            missingUserCount = validation.MissingUserCount
+                        }
                     };
-
-                    _context.QrCodeRequest.Add(qrRequest);
                 }
 
+                // STEP 2: Prevent duplicate pending request for same segment
+                var alreadyPending = await _context.QrCodeRequest.AnyAsync(x =>
+                    x.IsActive &&
+                    x.ApprovalStatus == 0 &&
+                    x.RequestId == model.RequestId &&
+                    x.CompanyId == model.CompanyId &&
+                    (x.OverrideId ?? 0) == (safeOverrideId ?? 0) &&
+                    x.QRValidFrom.Date == model.QRValidFrom.Date &&
+                    x.QRValidTill.Date == model.QRValidTill.Date);
+
+                if (alreadyPending)
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "Approval request already pending for this segment.",
+                        MessageType = "warning"
+                    };
+                }
+
+                // STEP 3: Prevent already-approved same segment duplicate
+                var alreadyApproved = await _context.QrCodeRequest.AnyAsync(x =>
+                    x.IsActive &&
+                    x.ApprovalStatus == 1 &&
+                    x.RequestId == model.RequestId &&
+                    x.CompanyId == model.CompanyId &&
+                    (x.OverrideId ?? 0) == (safeOverrideId ?? 0) &&
+                    x.QRValidFrom.Date == model.QRValidFrom.Date &&
+                    x.QRValidTill.Date == model.QRValidTill.Date);
+
+                if (alreadyApproved)
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "This segment is already approved.",
+                        MessageType = "warning"
+                    };
+                }
+
+                var entity = new QrCodeRequest
+                {
+                    CompanyId = model.CompanyId,
+                    CompanyName = model.CompanyName,
+                    CompanyEmail = model.CompanyEmail,
+                    RequestId = model.RequestId,
+                    OverrideId = safeOverrideId,
+                    NoofQR = model.NoofQR,
+                    QRValidFrom = model.QRValidFrom,
+                    QRValidTill = model.QRValidTill,
+                    PlanType = model.PlanType,
+                    IsActive = true,
+                    ApprovalStatus = 0,
+                    RequestedBy = model.CreatedBy,
+                    RequestedDate = DateTime.UtcNow,
+                    CreatedBy = model.CreatedBy,
+                    CreatedDate = DateTime.UtcNow,
+                    UpdatedBy = model.UpdatedBy,
+                    UpdatedDate = DateTime.UtcNow
+                };
+
+                _context.QrCodeRequest.Add(entity);
                 await _context.SaveChangesAsync();
 
-                foreach (var qr in model.QrImages)
+                return new ApiResponseDto
                 {
-                    if (string.IsNullOrWhiteSpace(qr.QrCodeImageBase64))
-                        throw new Exception("QR image Base64 is required for each QR.");
-
-                    byte[] imageBytes;
-                    try
-                    {
-                        imageBytes = Convert.FromBase64String(qr.QrCodeImageBase64);
-                    }
-                    catch
-                    {
-                        throw new Exception("Invalid QR image Base64 format.");
-                    }
-
-                    var qrImage = new QrImage
-                    {
-                        Qrcoderequestid = qrRequest.Id,
-                        QrCodeText = qr.QrCodeText,
-                        QrCodeImage = imageBytes,
-                        IsActive = true,
-                        SerialNo = qr.SerialNo,
-                        UniqueCode = qr.UniqueCode,
-                        IsUsed = false,
-                        UsedDate = null,
-                        CreatedDate = DateTime.UtcNow,
-                        CreatedBy = model.CreatedBy.ToString(),
-                        UpdatedDate = DateTime.UtcNow,
-                        UpdatedBy = (model.UpdatedBy > 0 ? model.UpdatedBy : model.CreatedBy).ToString()
-                    };
-
-                    _context.QrImage.Add(qrImage);
-                }
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                model.Id = qrRequest.Id;
-                model.OverrideId = safeOverrideId;
-
-                return model;
+                    IsSuccess = true,
+                    Message = "QR request submitted for approval successfully.",
+                    MessageType = "success",
+                    Data = entity.Id
+                };
             }
-            catch
+            catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                throw;
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = ex.Message,
+                    MessageType = "error"
+                };
             }
         }
 
-        public async Task<QrCodeRequestModel> SubmitQrApprovalRequestAsync(QrCodeRequestModel model)
-        {
-            if (model == null)
-                throw new ArgumentNullException(nameof(model));
-
-            if (model.CompanyId <= 0)
-                throw new Exception("CompanyId must be greater than 0.");
-
-            if (string.IsNullOrWhiteSpace(model.CompanyName))
-                throw new Exception("CompanyName is required.");
-
-            if (model.RequestId <= 0)
-                throw new Exception("RequestId must be greater than 0.");
-
-            if (model.NoofQR <= 0)
-                throw new Exception("NoofQR must be greater than 0.");
-
-            if (model.QRValidFrom == default)
-                throw new Exception("QRValidFrom is required.");
-
-            if (model.QRValidTill == default)
-                throw new Exception("QRValidTill is required.");
-
-            if (model.QRValidFrom.Date > model.QRValidTill.Date)
-                throw new Exception("QRValidFrom cannot be greater than QRValidTill.");
-
-            int? safeOverrideId = (model.OverrideId.HasValue && model.OverrideId.Value > 0)
-                ? model.OverrideId.Value
-                : null;
-
-            var pendingItems = await GetQrPendingDropdown();
-
-            var matchedPending = pendingItems.FirstOrDefault(x =>
-                x.RequestId == model.RequestId &&
-                (x.OverrideId ?? 0) == (safeOverrideId ?? 0) &&
-                x.FromDate.Date == model.QRValidFrom.Date &&
-                x.TillDate.Date == model.QRValidTill.Date);
-
-            if (matchedPending == null)
-                throw new Exception("Selected pending segment is not available. Please refresh and try again.");
-
-            if (model.NoofQR > matchedPending.Qty)
-                throw new Exception($"Only {matchedPending.Qty} QR(s) can be requested for this segment.");
-
-            var alreadyPending = await _context.QrCodeRequest.AnyAsync(x =>
-                x.IsActive &&
-                x.ApprovalStatus == 0 &&
-                x.RequestId == model.RequestId &&
-                (x.OverrideId ?? 0) == (safeOverrideId ?? 0) &&
-                x.QRValidFrom.Date == model.QRValidFrom.Date &&
-                x.QRValidTill.Date == model.QRValidTill.Date);
-
-            if (alreadyPending)
-                throw new Exception("Approval request already pending for this segment.");
-
-            var entity = new QrCodeRequest
-            {
-                CompanyId = model.CompanyId,
-                CompanyName = model.CompanyName.Trim(),
-                CompanyEmail = string.IsNullOrWhiteSpace(model.CompanyEmail) ? null : model.CompanyEmail.Trim(),
-                RequestId = model.RequestId,
-                OverrideId = safeOverrideId,
-                NoofQR = model.NoofQR,
-                QRValidFrom = model.QRValidFrom,
-                QRValidTill = model.QRValidTill,
-                IsActive = true,
-                CreatedDate = DateTime.UtcNow,
-                UpdatedDate = null,
-                CreatedBy = model.CreatedBy,
-                UpdatedBy = 0,
-
-                ApprovalStatus = 0,
-                RequestedBy = model.CreatedBy,
-                RequestedDate = DateTime.UtcNow,
-                ApprovedBy = null,
-                ApprovedDate = null,
-                RejectedBy = null,
-                RejectedDate = null,
-                RejectionReason = null
-            };
-
-            _context.QrCodeRequest.Add(entity);
-            await _context.SaveChangesAsync();
-
-            model.Id = entity.Id;
-            model.OverrideId = safeOverrideId;
-            model.ApprovalStatus = entity.ApprovalStatus;
-            model.RequestedBy = entity.RequestedBy;
-            model.RequestedDate = entity.RequestedDate;
-
-            return model;
-        }
-
-        public async Task<string> ApproveQrRequestAsync(int qrCodeRequestId, int approvedBy)
+        public async Task<ApiResponseDto> ApproveQrRequestAsync(int qrCodeRequestId, int approvedBy)
         {
             if (qrCodeRequestId <= 0)
-                throw new Exception("Valid QR request id is required.");
+            {
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = "Valid QR request id is required.",
+                    MessageType = "error"
+                };
+            }
 
             if (approvedBy <= 0)
-                throw new Exception("Valid approvedBy is required.");
+            {
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = "Valid approvedBy is required.",
+                    MessageType = "error"
+                };
+            }
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -1014,10 +1093,24 @@ namespace CateringApi.Repositories.Implementations
                     .FirstOrDefaultAsync(x => x.Id == qrCodeRequestId && x.IsActive);
 
                 if (qrRequest == null)
-                    throw new Exception("QR request not found.");
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "QR request not found.",
+                        MessageType = "error"
+                    };
+                }
 
                 if (qrRequest.ApprovalStatus != 0)
-                    throw new Exception("Only pending QR requests can be approved.");
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "Only pending QR requests can be approved.",
+                        MessageType = "error"
+                    };
+                }
 
                 var existingApproved = await _context.QrCodeRequest.AnyAsync(x =>
                     x.Id != qrRequest.Id &&
@@ -1029,7 +1122,14 @@ namespace CateringApi.Repositories.Implementations
                     x.QRValidTill.Date == qrRequest.QRValidTill.Date);
 
                 if (existingApproved)
-                    throw new Exception("This QR request is already approved for the selected segment.");
+                {
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "This QR request is already approved for the selected segment.",
+                        MessageType = "warning"
+                    };
+                }
 
                 var generateModel = new QrCodeRequest
                 {
@@ -1042,15 +1142,51 @@ namespace CateringApi.Repositories.Implementations
                     NoofQR = qrRequest.NoofQR,
                     QRValidFrom = qrRequest.QRValidFrom,
                     QRValidTill = qrRequest.QRValidTill,
+                    PlanType = qrRequest.PlanType,
                     IsActive = qrRequest.IsActive,
                     CreatedBy = qrRequest.CreatedBy,
                     UpdatedBy = approvedBy
                 };
 
-                var qrResults = await GenerateUniqueQrs(generateModel);
+                var qrResponse = await GenerateUniqueQrs(generateModel);
+
+                if (qrResponse == null)
+                {
+                    await transaction.RollbackAsync();
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "QR generation failed.",
+                        MessageType = "error"
+                    };
+                }
+
+                // IMPORTANT
+                if (!qrResponse.IsSuccess)
+                {
+                    await transaction.RollbackAsync();
+
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = qrResponse.Message,
+                        MessageType = "warning",
+                        Data = qrResponse.Data
+                    };
+                }
+
+                var qrResults = qrResponse.Data as List<QrResultDto>;
 
                 if (qrResults == null || !qrResults.Any())
-                    throw new Exception("QR generation failed.");
+                {
+                    await transaction.RollbackAsync();
+                    return new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "QR generation failed.",
+                        MessageType = "error"
+                    };
+                }
 
                 var oldImages = await _context.QrImage
                     .Where(x => x.Qrcoderequestid == qrRequest.Id && x.IsActive)
@@ -1077,7 +1213,13 @@ namespace CateringApi.Repositories.Implementations
                     }
                     else
                     {
-                        throw new Exception("Generated QR image is empty.");
+                        await transaction.RollbackAsync();
+                        return new ApiResponseDto
+                        {
+                            IsSuccess = false,
+                            Message = "Generated QR image is empty.",
+                            MessageType = "error"
+                        };
                     }
 
                     var qrImage = new QrImage
@@ -1088,6 +1230,7 @@ namespace CateringApi.Repositories.Implementations
                         IsActive = true,
                         SerialNo = qr.SerialNo,
                         UniqueCode = qr.UniqueCode,
+                        PlanType = qrRequest.PlanType,
                         IsUsed = false,
                         UsedDate = null,
                         CreatedDate = DateTime.UtcNow,
@@ -1097,6 +1240,57 @@ namespace CateringApi.Repositories.Implementations
                     };
 
                     _context.QrImage.Add(qrImage);
+                    await _context.SaveChangesAsync();
+
+                    var assignedUserIds = await _context.QrUserAssignment
+      .Where(x => x.QrCodeRequestId == qrRequest.Id && x.IsActive)
+      .Select(x => x.UserId)
+      .ToListAsync();
+
+                    string planType = NormalizePlanType(qrRequest.PlanType).ToUpper();
+
+                    var user = await _context.UserMaster
+                        .Where(x =>
+                            x.CompanyId == qrRequest.CompanyId &&
+                            x.IsActive &&
+                            !x.IsDelete &&
+                            !assignedUserIds.Contains(x.Id) &&
+                            (
+                                ((x.PlanType == null || x.PlanType == "") && planType == "BASIC") ||
+                                x.PlanType.ToUpper() == planType
+                            ))
+                        .OrderBy(x => x.Id)
+                        .FirstOrDefaultAsync();
+
+                    if (user == null)
+                    {
+                        await transaction.RollbackAsync();
+
+                        return new ApiResponseDto
+                        {
+                            IsSuccess = false,
+                            Message = $"No available {planType} user found for QR assignment.",
+                            MessageType = "warning"
+                        };
+                    }
+
+                    _context.QrUserAssignment.Add(new QrUserAssignment
+                    {
+                        QrCodeRequestId = qrRequest.Id,
+                        QrImageId = qrImage.Id,
+                        UserId = user.Id,
+                        CompanyId = qrRequest.CompanyId,
+                        RequestId = qrRequest.RequestId,
+                        OverrideId = qrRequest.OverrideId,
+                        PlanType = planType,
+                        UniqueCode = qr.UniqueCode ?? "",
+                        Email = user.Email ?? "",
+                        IsEmailSent = false,
+                        EmailSentDate = null,
+                        IsActive = true,
+                        CreatedBy = approvedBy,
+                        CreatedDate = DateTime.UtcNow
+                    });
                 }
 
                 qrRequest.ApprovalStatus = 1;
@@ -1108,14 +1302,25 @@ namespace CateringApi.Repositories.Implementations
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                await SendQrEmailToCompanyAsync(qrRequest.Id);
+                await SendQrEmailToAssignedUsersAsync(qrRequest.Id);
 
-                return "QR request approved successfully. QR generated and email sent.";
+                return new ApiResponseDto
+                {
+                    IsSuccess = true,
+                    Message = "QR request approved successfully. QR generated and sent to users.",
+                    MessageType = "success"
+                };
             }
-            catch
+            catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                throw;
+
+                return new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = ex.Message,
+                    MessageType = "error"
+                };
             }
         }
 
@@ -1188,5 +1393,59 @@ namespace CateringApi.Repositories.Implementations
 
             await SendQrEmailAsync(emailPayload);
         }
+        public async Task<QrUserCountValidationDto> ValidateCompanyUserCountAsync(
+      int requestId,
+      int? overrideId,
+      string? planType)
+        {
+            using var con = Connection;
+
+            var result = await con.QueryFirstOrDefaultAsync<QrUserCountValidationDto>(
+                "dbo.sp_Qr_ValidateCompanyUserCount",
+                new
+                {
+                    RequestId = requestId,
+                    OverrideId = overrideId,
+                    PlanType = planType
+                },
+                commandType: CommandType.StoredProcedure);
+
+            return result ?? new QrUserCountValidationDto
+            {
+                IsAllowed = false,
+                Message = "Unable to validate company user count.",
+                CompanyId = 0,
+                PlanType = planType ?? "Basic",
+                RequiredCount = 0,
+                AvailableUserCount = 0,
+                MissingUserCount = 0
+            };
+        }
+        public async Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(int companyId, string planType, int count)
+        {
+            planType = string.IsNullOrWhiteSpace(planType) ? "Basic" : planType.Trim();
+
+            return await _context.UserMaster
+                .Where(x =>
+                    x.CompanyId == companyId &&
+                    x.IsActive &&
+                    !x.IsDelete &&
+                    !string.IsNullOrWhiteSpace(x.Email) &&
+                    (
+                        ((x.PlanType == null || x.PlanType == "") && planType.ToUpper() == "BASIC") ||
+                        x.PlanType.ToUpper() == planType.ToUpper()
+                    ))
+                .OrderBy(x => x.Id)
+                .Take(count)
+                .Select(x => new QrTargetUserDto
+                {
+                    Id = x.Id,
+                    Username = x.Username ?? "",
+                    Email = x.Email ?? "",
+                    PlanType = string.IsNullOrWhiteSpace(x.PlanType) ? "Basic" : x.PlanType
+                })
+                .ToListAsync();
+        }
+
     }
 }

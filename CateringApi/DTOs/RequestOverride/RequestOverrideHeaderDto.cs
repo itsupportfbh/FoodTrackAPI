@@ -53,7 +53,7 @@
         public int SessionId { get; set; }
         public int CuisineId { get; set; }
         public int LocationId { get; set; }
-        public int OverrideQty { get; set; }
+        public decimal OverrideQty { get; set; }
         public bool IsActive { get; set; }
         public bool IsCancelled { get; set; }
         public int? CreatedBy { get; set; }
@@ -83,7 +83,6 @@
         public int BaseQty { get; set; }
         public int OverrideQty { get; set; }
         public bool IsCancelled { get; set; }
-
         public string PlanType { get; set; } = "";
     }
     public class RequestOverrideListDto
@@ -111,8 +110,8 @@
     public class SaveRequestOverrideResultDto
     {
         public bool IsSuccess { get; set; }
-        public string Message { get; set; } = string.Empty;
-        public string MessageType { get; set; } = string.Empty;
-        public int? Data { get; set; }
+        public string Message { get; set; } = "";
+        public string MessageType { get; set; } = "";
+        public object? Data { get; set; }
     }
 }

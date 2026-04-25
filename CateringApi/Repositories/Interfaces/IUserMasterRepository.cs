@@ -9,7 +9,7 @@ namespace CateringApi.Repositories.Interfaces
         Task<IEnumerable<UserMasterDTO>> GetAllAsync(long currentUserId, int currentRoleId, int currentCompanyId);
         Task<UserMaster> GetByIdAsync(long id);
         Task<int> CreateAsync(CreateUserMasterDto userMaster);
-        Task UpdateAsync(UserMaster userMaster);
+        Task UpdateAsync(UserMaster1 userMaster);
         Task DeleteAsync(int id, int updatedBy);
         Task<IEnumerable<RolesDTO>> GetRoles();
 

@@ -30,5 +30,6 @@ namespace CateringApi.DTOs.Request
         public DateTime? UpdatedDate { get; set; }
 
         public CateringApi.Models.Session Session { get; set; }
+        public string PlanType { get; set; }
     }
 }

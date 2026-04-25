@@ -44,7 +44,7 @@ namespace CateringApi.Controllers
         }
 
         [HttpPut("UpdateUserMaster")]
-        public async Task<IActionResult> UpdateUserMaster([FromBody] UserMaster userMaster)
+        public async Task<IActionResult> UpdateUserMaster([FromBody] UserMaster1 userMaster)
         {
             await _userMasterRepository.UpdateAsync(userMaster);
             return Ok(new ResponseResult(true, "User updated successfully", null));

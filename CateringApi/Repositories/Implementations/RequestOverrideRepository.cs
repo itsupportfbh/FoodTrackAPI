@@ -62,10 +62,14 @@ namespace CateringApi.Repositories.Implementations
             param.Add("@CreatedBy", dto.CreatedBy);
             param.Add("@LinesJson", JsonSerializer.Serialize(dto.Lines, jsonOptions));
 
-            return await Connection.QueryFirstAsync<SaveRequestOverrideResultDto>(
+            using var con = Connection;
+
+            var result = await con.QueryFirstAsync<SaveRequestOverrideResultDto>(
                 "dbo.sp_RequestOverride_Save",
                 param,
                 commandType: CommandType.StoredProcedure);
+
+            return result;
         }
 
         public async Task<List<RequestOverrideListDto>> GetOverrideList(int companyId)

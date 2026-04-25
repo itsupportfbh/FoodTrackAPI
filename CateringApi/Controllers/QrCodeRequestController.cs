@@ -1,9 +1,10 @@
 ﻿using CateringApi.DTOModel;
+using CateringApi.DTOs.Common;
 using CateringApi.DTOs.Scanner;
 using CateringApi.DTOs.Scanner.CateringApi.DTOs.Scanner;
+using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CateringApi.Controllers
@@ -13,22 +14,24 @@ namespace CateringApi.Controllers
     [Authorize]
     public class QrCodeRequestController : ControllerBase
     {
-
-
         private readonly IQrCodeRequestRepository _qrCodeRequestRepository;
         private readonly IQrValidationRepository _qrvalidationrepo;
-        public QrCodeRequestController(IQrCodeRequestRepository qrCodeRequestRepository, IQrValidationRepository qrValidationRepository)
+
+        public QrCodeRequestController(
+            IQrCodeRequestRepository qrCodeRequestRepository,
+            IQrValidationRepository qrValidationRepository)
         {
             _qrCodeRequestRepository = qrCodeRequestRepository;
             _qrvalidationrepo = qrValidationRepository;
         }
 
-
         [HttpGet("GetRequestIdDropdown")]
-        public Task<List<RequestDropdownDto>> GetQrPendingDropdown()
+        public async Task<IActionResult> GetQrPendingDropdown()
         {
-            return _qrCodeRequestRepository.GetQrPendingDropdown();
+            var data = await _qrCodeRequestRepository.GetQrPendingDropdown();
+            return Ok(data);
         }
+
         [HttpGet("DownloadQrZip")]
         public async Task<IActionResult> DownloadQrZip(int qrcoderequestid)
         {
@@ -40,7 +43,6 @@ namespace CateringApi.Controllers
             return File(result.Value.ZipBytes, "application/zip", result.Value.FileName);
         }
 
-
         [HttpGet("GetQrDetailsByRequestId")]
         public async Task<IActionResult> GetQrDetailsByRequestId(int requestId)
         {
@@ -49,24 +51,11 @@ namespace CateringApi.Controllers
         }
 
         [HttpGet("GetAllQRList")]
-        public async Task<List<QrCodeRequestModel>> GetAllQRList()
+        public async Task<IActionResult> GetAllQRList()
         {
-            return await _qrCodeRequestRepository.GetAllQRList();
+            var data = await _qrCodeRequestRepository.GetAllQRList();
+            return Ok(data);
         }
-
-        //[HttpGet("GetAllQRModelbyrequestId")]
-        //public Task<List<QrCodeRequestModel>> GetAllQRModelbyrequestId(int id, int requestId)
-        //{
-        //    return _qrCodeRequestRepository.GetAllQRModelbyId(id, requestId);
-        //}
-
-        //[HttpGet("GetAllQRModelbyId")]
-        //public Task<List<QrCodeRequestModel>> GetAllQRModelbyId(int id)
-        //{
-        //    return _qrCodeRequestRepository.GetAllQRModelbyId(id);
-        //}
-
-
 
         [HttpPost("SendQrEmail")]
         public async Task<IActionResult> SendQrEmail([FromBody] SendEmailDto model)
@@ -77,26 +66,36 @@ namespace CateringApi.Controllers
                 success = result,
                 message = "QR email sent successfully"
             });
-
         }
-        [HttpPost("AddUpdateQrWithImages")]
 
+        [HttpPost("AddUpdateQrWithImages")]
         public async Task<IActionResult> AddUpdateQrWithImagesAsync([FromBody] QrCodeRequestModel model)
         {
             var result = await _qrCodeRequestRepository.AddUpdateQrWithImagesAsync(model);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
             return Ok(result);
         }
 
         [HttpPost("GenerateUniqueQrs")]
-        public async Task<List<QrResultDto>> GenerateUniqueQrs(QrCodeRequest model)
+        public async Task<IActionResult> GenerateUniqueQrs([FromBody] QrCodeRequest model)
         {
-            return await _qrCodeRequestRepository.GenerateUniqueQrs(model);
+            var result = await _qrCodeRequestRepository.GenerateUniqueQrs(model);
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
         }
+
         [HttpGet("ValidateScan")]
         public async Task<QrValidationResult> ValidateScanAsync(string UniqueCode)
         {
             return await _qrvalidationrepo.ValidateScanAsync(UniqueCode);
         }
+
         [HttpDelete("DeleteQR/{id}")]
         public async Task<IActionResult> DeleteQR(int id, [FromQuery] int userId)
         {
@@ -104,32 +103,62 @@ namespace CateringApi.Controllers
 
             if (data == null)
             {
-                return NotFound(new { message = "QR record not found" });
+                return NotFound(new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = "QR record not found",
+                    MessageType = "error"
+                });
             }
 
-            return Ok(new
+            return Ok(new ApiResponseDto
             {
-                message = "QR record deleted successfully",
-                data
+                IsSuccess = true,
+                Message = "QR record deleted successfully",
+                MessageType = "success",
+                Data = data
             });
         }
+
         [HttpPost("submit-qr-approval")]
         public async Task<IActionResult> SubmitQrApproval([FromBody] QrCodeRequestModel model)
         {
             var result = await _qrCodeRequestRepository.SubmitQrApprovalRequestAsync(model);
-            return Ok(new { message = result });
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
         }
+
         [HttpPost("approve-qr-request/{id}")]
         public async Task<IActionResult> ApproveQrRequest(int id, [FromBody] int approvedBy)
         {
             var result = await _qrCodeRequestRepository.ApproveQrRequestAsync(id, approvedBy);
-            return Ok(new { message = result });
+
+            if (!result.IsSuccess)
+                return BadRequest(result);
+
+            return Ok(result);
         }
+
         [HttpPost("reject-qr-request/{id}")]
         public async Task<IActionResult> RejectQrRequest(int id, [FromBody] RejectQrDto model)
         {
             var result = await _qrCodeRequestRepository.RejectQrRequestAsync(id, model.RejectedBy, model.Reason);
-            return Ok(new { message = result });
+
+            return Ok(new ApiResponseDto
+            {
+                IsSuccess = true,
+                Message = result,
+                MessageType = "success"
+            });
+        }
+        [HttpGet("GetQrTargetUsers")]
+        public async Task<IActionResult> GetQrTargetUsers(int companyId, string planType, int count)
+        {
+            var data = await _qrCodeRequestRepository.GetQrTargetUsersAsync(companyId, planType, count);
+            return Ok(data);
         }
     }
 }

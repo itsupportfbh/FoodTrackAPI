@@ -9,10 +9,14 @@
         public string CompanyEmail { get; set; } = string.Empty;
 
         public int RequestId { get; set; }
-        public string RequestNo { get; set; }
+        public string RequestNo { get; set; } = string.Empty;
         public int NoofQR { get; set; }
+        public decimal TotalQty { get; set; }
+
         public DateTime QRValidFrom { get; set; }
         public DateTime QRValidTill { get; set; }
+
+        public string PlanType { get; set; } = string.Empty;
 
         public bool IsActive { get; set; }
         public DateTime CreatedDate { get; set; }
@@ -42,16 +46,17 @@
     {
         public int Id { get; set; }
         public int QrCodeRequestId { get; set; }
-        public string QrCodeImageBase64 { get; set; }
-        public string QrCodeText { get; set; }
+        public string QrCodeImageBase64 { get; set; } = string.Empty;
+        public string QrCodeText { get; set; } = string.Empty;
         public int? SerialNo { get; set; }
-        public string UniqueCode { get; set; }
+        public string UniqueCode { get; set; } = string.Empty;
+        public string? PlanType { get; set; }
         public bool IsUsed { get; set; }
         public DateTime? UsedDate { get; set; }
         public bool IsActive { get; set; }
         public DateTime? CreatedDate { get; set; }
-        public string CreatedBy { get; set; }
-        public string UpdatedBy { get; set; }
+        public string CreatedBy { get; set; } = string.Empty;
+        public string UpdatedBy { get; set; } = string.Empty;
         public DateTime? UpdatedDate { get; set; }
     }
 
@@ -59,14 +64,22 @@
     {
         public int? RequestId { get; set; }
         public int? OverrideId { get; set; }
-        public string RequestNo { get; set; }
+        public string RequestNo { get; set; } = string.Empty;
         public int CompanyId { get; set; }
-        public string CompanyName { get; set; }
-        public string CompanyEmail { get; set; }
-        public int Qty { get; set; }
+        public string CompanyName { get; set; } = string.Empty;
+        public string CompanyEmail { get; set; } = string.Empty;
+        public decimal Qty { get; set; }
         public DateTime FromDate { get; set; }
         public DateTime TillDate { get; set; }
-        public string SourceType { get; set; }
-        public string DisplayText { get; set; }
+        public string SourceType { get; set; } = string.Empty;
+        public string PlanType { get; set; } = string.Empty;
+        public string DisplayText { get; set; } = string.Empty;
+    }
+    public class QrTargetUserDto
+    {
+        public int Id { get; set; }
+        public string Username { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string PlanType { get; set; } = "";
     }
 }

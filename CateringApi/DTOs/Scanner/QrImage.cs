@@ -22,6 +22,7 @@
         public string UpdatedBy { get; set; }          // Optional updater
         public DateTime? UpdatedDate { get; set; }
         public int? QRScannedCount { get; set; }
+        public string PlanType { get; set; }
     }
 
     namespace CateringApi.DTOs.Scanner
@@ -74,6 +75,24 @@
         {
             public DateTime FromDate { get; set; }
             public DateTime TillDate { get; set; }
+        }
+        public class QrUserAssignment
+        {
+            public int Id { get; set; }
+            public int QrCodeRequestId { get; set; }
+            public int QrImageId { get; set; }
+            public int UserId { get; set; }
+            public int CompanyId { get; set; }
+            public int RequestId { get; set; }
+            public int? OverrideId { get; set; }
+            public string PlanType { get; set; } = "Basic";
+            public string UniqueCode { get; set; } = string.Empty;
+            public string? Email { get; set; }
+            public bool IsEmailSent { get; set; }
+            public DateTime? EmailSentDate { get; set; }
+            public bool IsActive { get; set; }
+            public int? CreatedBy { get; set; }
+            public DateTime CreatedDate { get; set; }
         }
     }
 }
