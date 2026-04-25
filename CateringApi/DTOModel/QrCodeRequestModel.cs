@@ -74,6 +74,7 @@
         public string SourceType { get; set; } = string.Empty;
         public string PlanType { get; set; } = string.Empty;
         public string DisplayText { get; set; } = string.Empty;
+        public List<CuisineDropdownDto> Cuisines { get; set; } = new();
     }
     public class QrTargetUserDto
     {
@@ -82,5 +83,12 @@
         public string Email { get; set; } = "";
         public string PlanType { get; set; } = "";
         public int CuisineId {  get; set; }
+    }
+
+    public class CuisineDropdownDto
+    {
+        public int CuisineId { get; set; }
+        public string CuisineName { get; set; }
+        public decimal Qty { get; set; }
     }
 }
