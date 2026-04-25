@@ -139,9 +139,9 @@ FROM dbo.RequestHeader rh
 INNER JOIN dbo.CompanyMaster c ON c.Id = rh.CompanyId
 WHERE rh.IsActive = 1
   AND (
-        (@RoleId = 2 AND rh.CompanyId = @CompanyId)
-        OR (@RoleId <> 2)
-      )
+      (@RoleId IN (2, 4) AND rh.CompanyId = @CompanyId)
+      OR (@RoleId NOT IN (2, 4))
+    )
 ORDER BY rh.Id DESC;";
 
             return await con.QueryAsync<RequestDto>(sql, new
@@ -350,7 +350,36 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
                         model.UserId
                     }, tran);
 
-                    var requestNo = $"REQ-{newId.ToString("D5")}";
+                    const string companyCodeSql = @"
+SELECT CompanyCode
+FROM dbo.CompanyMaster
+WHERE Id = @CompanyId;";
+
+                    var companyCode = await con.QueryFirstOrDefaultAsync<string>(
+                        companyCodeSql,
+                        new { CompanyId = model.CompanyId },
+                        tran
+                    );
+
+                    companyCode = string.IsNullOrWhiteSpace(companyCode)
+                        ? model.CompanyId.ToString()
+                        : companyCode.Trim().ToUpper();
+
+                    const string requestNoSql = @"
+SELECT ISNULL(MAX(TRY_CONVERT(INT, RIGHT(RequestNo, 4))), 0) + 1
+FROM dbo.RequestHeader WITH (UPDLOCK, HOLDLOCK)
+WHERE CompanyId = @CompanyId
+  AND RequestNo LIKE @Prefix + '%';";
+
+                    var prefix = $"REQ-{companyCode}-";
+
+                    var nextNo = await con.ExecuteScalarAsync<int>(
+                        requestNoSql,
+                        new { CompanyId = model.CompanyId, Prefix = prefix },
+                        tran
+                    );
+
+                    var requestNo = $"{prefix}{nextNo.ToString("D4")}";
 
                     const string updateRequestNoSql = @"
 UPDATE dbo.RequestHeader
