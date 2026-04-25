@@ -973,6 +973,9 @@ namespace CateringApi.Repositories.Implementations
                         {
                             redirectTo = "/users/list",
                             companyId = validation.CompanyId,
+                            planType = validation.PlanType,
+                            cuisineId = validation.CuisineId,
+                            cuisineName = validation.CuisineName,
                             requiredCount = validation.RequiredCount,
                             availableUserCount = validation.AvailableUserCount,
                             missingUserCount = validation.MissingUserCount
@@ -1421,7 +1424,11 @@ namespace CateringApi.Repositories.Implementations
                 MissingUserCount = 0
             };
         }
-        public async Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(int companyId, string planType, int count)
+        public async Task<List<QrTargetUserDto>> GetQrTargetUsersAsync(
+      int companyId,
+      string planType,
+      int cuisineId,
+      int count)
         {
             planType = string.IsNullOrWhiteSpace(planType) ? "Basic" : planType.Trim();
 
@@ -1430,6 +1437,7 @@ namespace CateringApi.Repositories.Implementations
                     x.CompanyId == companyId &&
                     x.IsActive &&
                     !x.IsDelete &&
+                    x.CuisineId == cuisineId &&
                     !string.IsNullOrWhiteSpace(x.Email) &&
                     (
                         ((x.PlanType == null || x.PlanType == "") && planType.ToUpper() == "BASIC") ||
@@ -1442,7 +1450,8 @@ namespace CateringApi.Repositories.Implementations
                     Id = x.Id,
                     Username = x.Username ?? "",
                     Email = x.Email ?? "",
-                    PlanType = string.IsNullOrWhiteSpace(x.PlanType) ? "Basic" : x.PlanType
+                    PlanType = string.IsNullOrWhiteSpace(x.PlanType) ? "Basic" : x.PlanType,
+                    CuisineId = x.CuisineId
                 })
                 .ToListAsync();
         }

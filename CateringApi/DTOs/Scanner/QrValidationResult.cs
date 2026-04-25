@@ -11,11 +11,11 @@
     public class QrUserCountValidationDto
     {
         public bool IsAllowed { get; set; }
-        public string Message { get; set; } = string.Empty;
-
+        public string Message { get; set; } = "";
         public int CompanyId { get; set; }
-        public string PlanType { get; set; } = "Basic";
-
+        public string PlanType { get; set; } = "";
+        public int CuisineId { get; set; }
+        public string CuisineName { get; set; } = "";
         public int RequiredCount { get; set; }
         public int AvailableUserCount { get; set; }
         public int MissingUserCount { get; set; }
