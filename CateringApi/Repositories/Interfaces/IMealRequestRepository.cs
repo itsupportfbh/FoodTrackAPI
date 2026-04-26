@@ -8,5 +8,7 @@ namespace CateringApi.Repositories.Interfaces
         Task<MealRequestListDto?> GetMealRequestById(int id);
         Task<object> SaveMealRequest(SaveMealRequestDto dto);
         Task<object> DeleteMealRequest(int id);
+
+        Task<IEnumerable<ShowQrDTO>> ShowQr(int companyId, int userId);
     }
 }

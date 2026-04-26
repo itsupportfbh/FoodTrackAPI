@@ -65,5 +65,20 @@ namespace CateringApi.Controllers
             var result = await _repository.DeleteMealRequest(id);
             return Ok(result);
         }
+
+
+
+        [HttpGet("ShowQr")]
+        public async Task<IActionResult> ShowQr(int companyId, int userId)
+        {
+            var data = await _repository.ShowQr(companyId, userId);
+
+            return Ok(new
+            {
+                status = true,
+                message = "QR Code loaded successfully.",
+                data
+            });
+        }
     }
 }
