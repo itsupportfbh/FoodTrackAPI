@@ -153,6 +153,9 @@ WHERE Id = @UserId
             string? locationIdsCsv = model.LocationIds != null && model.LocationIds.Any()
                 ? string.Join(",", model.LocationIds.Distinct())
                 : null;
+            string? planTypesCsv = model.PlanTypes != null && model.PlanTypes.Any()
+                ? string.Join(",", model.PlanTypes.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct())
+                : null;
 
             // backward compatibility with old single filters
             if (string.IsNullOrWhiteSpace(companyIdsCsv) && model.CompanyId.HasValue)
@@ -237,6 +240,12 @@ OUTER APPLY
         SELECT TRY_CAST(value AS INT)
         FROM STRING_SPLIT(@CuisineIdsCsv, ',')
         WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
+    AND (@PlanTypesCsv IS NULL OR ISNULL(u.PlanType, 'Basic') IN
+    (
+        SELECT LTRIM(RTRIM(value))
+        FROM STRING_SPLIT(@PlanTypesCsv, ',')
+        WHERE LTRIM(RTRIM(value)) <> ''
     ))
     AND (@LocationIdsCsv IS NULL OR mr.LocationId IN
     (
@@ -345,6 +354,12 @@ AND (@LocationIdsCsv IS NULL OR uml.LocationId IN
     FROM STRING_SPLIT(@LocationIdsCsv, ',')
     WHERE TRY_CAST(value AS INT) IS NOT NULL
 ))
+AND (@PlanTypesCsv IS NULL OR uml.PlanType IN
+(
+    SELECT LTRIM(RTRIM(value))
+    FROM STRING_SPLIT(@PlanTypesCsv, ',')
+    WHERE LTRIM(RTRIM(value)) <> ''
+))
 GROUP BY cu.CuisineName
 ORDER BY cu.CuisineName
 OPTION (MAXRECURSION 366);";
@@ -356,7 +371,8 @@ OPTION (MAXRECURSION 366);";
                 model.ToDate,
                 SessionIdsCsv = sessionIdsCsv,
                 CuisineIdsCsv = cuisineIdsCsv,
-                LocationIdsCsv = locationIdsCsv
+                LocationIdsCsv = locationIdsCsv,
+                PlanTypesCsv = planTypesCsv
             };
 
             var rows = await con.QueryAsync<ReportByDateRowDto>(mainSql, sqlParams);
