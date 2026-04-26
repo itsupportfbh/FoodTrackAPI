@@ -20,11 +20,13 @@ namespace CateringApi.Controllers
 
         [HttpGet("GetScreenData")]
         public async Task<IActionResult> GetScreenData(
-            [FromQuery] int requestHeaderId,
-            [FromQuery] DateTime fromDate,
-            [FromQuery] DateTime toDate)
+     int requestHeaderId,
+     DateTime fromDate,
+     DateTime toDate,
+     int? requestOverrideId   // 👈 ADD THIS
+ )
         {
-            var data = await _repository.GetScreenDataAsync(requestHeaderId, fromDate, toDate);
+            var data = await _repository.GetScreenDataAsync(requestHeaderId, fromDate, toDate, requestOverrideId);
 
             if (data == null)
             {

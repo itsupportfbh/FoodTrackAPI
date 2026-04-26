@@ -11,11 +11,11 @@ namespace CateringApi.DTOs.Request
 
         public int RequestHeaderId { get; set; }
 
-        public int SessionId { get; set; }
+        public int? SessionId { get; set; }
 
         public int CuisineId { get; set; }
 
-        public int LocationId { get; set; }
+        public int? LocationId { get; set; }
 
         public decimal Qty { get; set; }
 

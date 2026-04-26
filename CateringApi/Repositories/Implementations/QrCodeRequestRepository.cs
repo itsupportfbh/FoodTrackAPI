@@ -305,23 +305,26 @@ namespace CateringApi.Repositories.Implementations
                     string uniqueCode =
                         $"CSPL-{planCode}-REQ{model.RequestId}-QR{i:D4}-{Guid.NewGuid().ToString("N")[..6].ToUpper()}";
 
-                    string qrText = System.Text.Json.JsonSerializer.Serialize(new
-                    {
-                        uniqueCode,
-                        requestId = model.RequestId,
-                        overrideId = model.OverrideId,
-                        companyId = model.CompanyId,
-                        planType = planType,
-                        validFrom = model.QRValidFrom.ToString("yyyy-MM-dd"),
-                        validTill = model.QRValidTill.ToString("yyyy-MM-dd")
-                    });
+                    // IMPORTANT:
+                    // QR-la JSON poda vendam.
+                    // Scanner direct UniqueCode match panna easy.
+                    string qrText = uniqueCode;
 
                     using var qrGenerator = new QRCodeGenerator();
-                    using var qrData = qrGenerator.CreateQrCode(qrText, QRCodeGenerator.ECCLevel.Q);
+
+                    // Logo use panradhu nala ECCLevel.H safe.
+                    using var qrData = qrGenerator.CreateQrCode(
+                        qrText,
+                        QRCodeGenerator.ECCLevel.H
+                    );
+
                     using var qrCode = new PngByteQRCode(qrData);
 
                     byte[] qrBytes = qrCode.GetGraphic(20);
-                    byte[] finalBytes = AddLogoToQr(qrBytes, logoPath, planType);
+
+                    byte[] finalBytes = File.Exists(logoPath)
+                        ? AddLogoToQr(qrBytes, logoPath, planType)
+                        : qrBytes;
 
                     qrResults.Add(new QrResultDto
                     {
@@ -354,13 +357,19 @@ namespace CateringApi.Repositories.Implementations
             var assignments = await (
                 from a in _context.QrUserAssignment
                 join qi in _context.QrImage on a.QrImageId equals qi.Id
+                join qr in _context.QrCodeRequest on a.QrCodeRequestId equals qr.Id
+                join rh in _context.RequestHeader on qr.RequestId equals rh.Id
+                join cm in _context.CompanyMaster on qr.CompanyId equals cm.Id
                 where a.QrCodeRequestId == qrCodeRequestId
                       && a.IsActive
                       && !a.IsEmailSent
                 select new
                 {
                     Assignment = a,
-                    Qr = qi
+                    Qr = qi,
+                    QrRequest = qr,
+                    RequestNo = rh.RequestNo,
+                    CompanyName = cm.CompanyName
                 }
             ).ToListAsync();
 
@@ -372,6 +381,12 @@ namespace CateringApi.Repositories.Implementations
                 var payload = new SendEmailDto
                 {
                     Email = item.Assignment.Email,
+                    CompanyName = item.CompanyName,
+                    RequestNo = item.RequestNo,
+                    PlanType = item.QrRequest.PlanType,
+                    QrValidFrom = item.QrRequest.QRValidFrom,
+                    QrValidTill = item.QrRequest.QRValidTill,
+
                     QrItems = new List<SendQrItemDto>
             {
                 new SendQrItemDto
@@ -396,7 +411,6 @@ namespace CateringApi.Repositories.Implementations
 
             await _context.SaveChangesAsync();
         }
-
         public async Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int qrcoderequestid)
         {
             var requestData = await (
@@ -561,7 +575,7 @@ namespace CateringApi.Repositories.Implementations
 
                 var bodyBuilder = new System.Text.StringBuilder();
 
-                bodyBuilder.Append(@"
+                bodyBuilder.Append($@"
 <html>
 <head>
   <meta charset='UTF-8'>
@@ -598,6 +612,30 @@ namespace CateringApi.Repositories.Implementations
           <p style='margin:0; font-size:15px; line-height:1.6; color:#4b5563;'>
             The QR codes for your request have been generated successfully. A summary is shown below, and the QR image files are attached with this email.
           </p>
+
+          <table role='presentation' cellspacing='0' cellpadding='0' border='0' width='100%'
+                 style='border-collapse:collapse; width:100%; margin:22px 0 0; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; background:#ffffff;'>
+            <tr>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827;'>Company</td>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; color:#374151;'>{model.CompanyName ?? "-"}</td>
+            </tr>
+            <tr>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827;'>Request No</td>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; color:#374151;'>{model.RequestNo ?? "-"}</td>
+            </tr>
+            <tr>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827;'>Plan Type</td>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; color:#374151;'>{model.PlanType ?? "-"}</td>
+            </tr>
+            <tr>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827;'>QR Valid From</td>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; color:#374151;'>{model.QrValidFrom:dd-MMM-yyyy}</td>
+            </tr>
+            <tr>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; font-weight:700; color:#111827;'>QR Valid Till</td>
+              <td style='padding:12px; border:1px solid #e5e7eb; font-size:14px; color:#374151;'>{model.QrValidTill:dd-MMM-yyyy}</td>
+            </tr>
+          </table>
         </td>
       </tr>
 
@@ -740,12 +778,8 @@ namespace CateringApi.Repositories.Implementations
                         PlanType = string.IsNullOrWhiteSpace(rd.PlanType)
                             ? "Basic"
                             : rd.PlanType.Trim(),
-
                         rd.CuisineId,
-
-                        CuisineName = cu != null
-                            ? cu.CuisineName
-                            : ""
+                        CuisineName = cu != null ? cu.CuisineName : ""
                     }
                     into g
                     select new
@@ -757,9 +791,7 @@ namespace CateringApi.Repositories.Implementations
                     }
                 ).ToListAsync();
 
-                var groupedPlan = baseData.GroupBy(x => x.PlanType).ToList();
-
-                foreach (var planGroup in groupedPlan)
+                foreach (var planGroup in baseData.GroupBy(x => x.PlanType))
                 {
                     var planType = planGroup.Key;
                     var totalQty = planGroup.Sum(x => x.Qty);
@@ -788,7 +820,7 @@ namespace CateringApi.Repositories.Implementations
                         .ToList();
 
                     var cuisineSummary = string.Join(", ",
-                        cuisines.Select(x => $"{x.CuisineName}({x.Qty})"));
+                        cuisines.Select(x => $"{x.CuisineName}({Convert.ToInt32(x.Qty)})"));
 
                     result.Add(new RequestDropdownDto
                     {
@@ -805,37 +837,35 @@ namespace CateringApi.Repositories.Implementations
                         PlanType = planType,
                         Cuisines = cuisines,
                         DisplayText =
-                            $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - Qty {pendingQty}"
+                            $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - {req.FromDate:yyyy-MM-dd} to {req.ToDate:yyyy-MM-dd} - Qty {Convert.ToInt32(pendingQty)}"
                     });
                 }
 
-                // ================= OVERRIDE REQUEST =================
+                // ================= OVERRIDE REQUEST - DIFFERENT QTY ONLY =================
                 var overrides = await _context.RequestOverride
-                    .Where(x => x.RequestHeaderId == req.Id && x.IsActive)
+                    .Where(x =>
+                        x.RequestHeaderId == req.Id &&
+                        x.IsActive &&
+                        x.DifferentQty > 0)
                     .ToListAsync();
 
                 foreach (var ov in overrides)
                 {
                     var overrideData = await (
                         from rod in _context.RequestOverrideDetail
-                        join rd in _context.RequestDetail on rod.RequestDetailId equals rd.Id
-                        join cu in _context.CuisineMaster on rd.CuisineId equals cu.Id into cuJoin
+                        join cu in _context.CuisineMaster on rod.CuisineId equals cu.Id into cuJoin
                         from cu in cuJoin.DefaultIfEmpty()
                         where rod.RequestOverrideId == ov.Id
                               && rod.IsActive
                               && !rod.IsCancelled
-                              && rod.OverrideQty > 0
+                              && rod.OverrideQty > rod.BaseQty
                         group rod by new
                         {
-                            PlanType = string.IsNullOrWhiteSpace(rd.PlanType)
+                            PlanType = string.IsNullOrWhiteSpace(rod.PlanType)
                                 ? "Basic"
-                                : rd.PlanType.Trim(),
-
-                            rd.CuisineId,
-
-                            CuisineName = cu != null
-                                ? cu.CuisineName
-                                : ""
+                                : rod.PlanType.Trim(),
+                            rod.CuisineId,
+                            CuisineName = cu != null ? cu.CuisineName : ""
                         }
                         into g
                         select new
@@ -843,16 +873,14 @@ namespace CateringApi.Repositories.Implementations
                             g.Key.PlanType,
                             g.Key.CuisineId,
                             g.Key.CuisineName,
-                            Qty = g.Sum(x => x.OverrideQty)
+                            Qty = g.Sum(x => x.OverrideQty - x.BaseQty)
                         }
                     ).ToListAsync();
 
-                    var groupedOverride = overrideData.GroupBy(x => x.PlanType).ToList();
-
-                    foreach (var planGroup in groupedOverride)
+                    foreach (var planGroup in overrideData.GroupBy(x => x.PlanType))
                     {
                         var planType = planGroup.Key;
-                        var totalQty = planGroup.Sum(x => x.Qty);
+                        var totalDifferentQty = planGroup.Sum(x => x.Qty);
 
                         decimal usedQty = await _context.QrCodeRequest
                             .Where(x =>
@@ -863,12 +891,13 @@ namespace CateringApi.Repositories.Implementations
                                 x.PlanType == planType)
                             .SumAsync(x => (decimal?)x.NoofQR) ?? 0;
 
-                        var pendingQty = totalQty - usedQty;
+                        var pendingQty = totalDifferentQty - usedQty;
 
                         if (pendingQty <= 0)
                             continue;
 
                         var cuisines = planGroup
+                            .Where(x => x.Qty > 0)
                             .Select(x => new CuisineDropdownDto
                             {
                                 CuisineId = x.CuisineId,
@@ -878,7 +907,7 @@ namespace CateringApi.Repositories.Implementations
                             .ToList();
 
                         var cuisineSummary = string.Join(", ",
-                            cuisines.Select(x => $"{x.CuisineName}({x.Qty})"));
+                            cuisines.Select(x => $"{x.CuisineName}({Convert.ToInt32(x.Qty)})"));
 
                         result.Add(new RequestDropdownDto
                         {
@@ -895,7 +924,7 @@ namespace CateringApi.Repositories.Implementations
                             PlanType = planType,
                             Cuisines = cuisines,
                             DisplayText =
-                                $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - Override #{ov.Id} - Qty {pendingQty}"
+    $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - {ov.FromDate:yyyy-MM-dd} to {ov.ToDate:yyyy-MM-dd} - Override #{ov.Id} - Different Qty {Convert.ToInt32(pendingQty)}"
                         });
                     }
                 }
@@ -1125,6 +1154,7 @@ namespace CateringApi.Repositories.Implementations
 
                 _context.QrCodeRequest.Add(entity);
                 await _context.SaveChangesAsync();
+                await SendQrApprovalRaisedMailToSuperAdminAsync(entity.Id);
 
                 return new ApiResponseDto
                 {
@@ -1568,6 +1598,109 @@ namespace CateringApi.Repositories.Implementations
                 })
                 .ToListAsync();
         }
+        private async Task SendQrApprovalRaisedMailToSuperAdminAsync(int qrCodeRequestId)
+        {
+            var request = await (
+                from qr in _context.QrCodeRequest
+                join rh in _context.RequestHeader on qr.RequestId equals rh.Id
+                join cm in _context.CompanyMaster on qr.CompanyId equals cm.Id
+                where qr.Id == qrCodeRequestId && qr.IsActive
+                select new
+                {
+                    QrCodeRequestId = qr.Id,
+                    qr.RequestId,
+                   
+                    qr.CompanyId,
+                    CompanyName = cm.CompanyName,
+                    rh.FromDate,
+                    rh.ToDate,
+                    qr.QRValidFrom,
+                    qr.QRValidTill,
+                    qr.PlanType,
+                    qr.NoofQR
+                }
+            ).FirstOrDefaultAsync();
 
+            if (request == null)
+                return;
+
+            var superAdminEmails = await _context.UserMaster
+                .Where(x =>
+                    x.RoleId == 1 &&
+                    x.IsActive &&
+                    !x.IsDelete &&
+                    !string.IsNullOrWhiteSpace(x.Email))
+                .Select(x => x.Email)
+                .Distinct()
+                .ToListAsync();
+
+            if (!superAdminEmails.Any())
+                return;
+
+            var body = $@"
+<html>
+<body style='font-family:Arial;background:#f6f6f6;padding:20px;'>
+    <div style='max-width:650px;margin:auto;background:#fff;border-radius:12px;padding:24px;'>
+        <h2 style='color:#6F3C2F;margin-top:0;'>New QR Approval Request Raised</h2>
+
+        <p>A new QR approval request has been raised.</p>
+
+        <table style='width:100%;border-collapse:collapse;margin-bottom:20px;'>
+            <tr>
+                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Company</td>
+                <td style='padding:10px;border:1px solid #ddd;'>{request.CompanyName}</td>
+            </tr>
+           
+            <tr>
+                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Order Date Range</td>
+                <td style='padding:10px;border:1px solid #ddd;'>
+                    {request.FromDate:dd-MMM-yyyy} to {request.ToDate:dd-MMM-yyyy}
+                </td>
+            </tr>
+            <tr>
+                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>QR Valid Date</td>
+                <td style='padding:10px;border:1px solid #ddd;'>
+                    {request.QRValidFrom:dd-MMM-yyyy} to {request.QRValidTill:dd-MMM-yyyy}
+                </td>
+            </tr>
+            <tr>
+                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Plan Type</td>
+                <td style='padding:10px;border:1px solid #ddd;'>{request.PlanType}</td>
+            </tr>
+            <tr>
+                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Total Qty</td>
+                <td style='padding:10px;border:1px solid #ddd;'>{request.NoofQR}</td>
+            </tr>
+        </table>
+
+        <p style='margin-top:20px;color:#666;font-size:13px;'>
+            This is an automated notification from FoodTrack.
+        </p>
+    </div>
+</body>
+</html>";
+
+            using var message = new MailMessage
+            {
+                From = new MailAddress(_smtpSettings.From),
+                Subject = $"New QR Approval Request - {request.QrCodeRequestId} - {request.PlanType}",
+                Body = body,
+                IsBodyHtml = true
+            };
+
+            foreach (var email in superAdminEmails)
+            {
+                message.To.Add(email);
+            }
+
+            using var smtp = new SmtpClient(_smtpSettings.SmtpHost, _smtpSettings.SmtpPort)
+            {
+                Credentials = new NetworkCredential(_smtpSettings.SmtpUser, _smtpSettings.SmtpPass),
+                EnableSsl = true,
+                UseDefaultCredentials = false
+            };
+
+            await smtp.SendMailAsync(message);
+        }
     }
 }

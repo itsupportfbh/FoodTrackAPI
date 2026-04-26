@@ -28,6 +28,7 @@ namespace CateringApi.DTOs.Dashboard
         public List<LatestQrDTO> TotallatestUsedQRs { get; set; } = new();
 
         public List<DashboardPriceDto> CurrentSessionPrices { get; set; } = new();
+        public List<PlanTypeOrderDTO> TotalOrdersByPlanType { get; set; } = new();
     }
 
     public class DashboardPriceDto

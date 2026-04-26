@@ -15,6 +15,11 @@
     public class SendEmailDto
     {
         public string Email { get; set; }
+        public string? CompanyName { get; set; }
+        public string? RequestNo { get; set; }
+        public string? PlanType { get; set; }
+        public DateTime? QrValidFrom { get; set; }
+        public DateTime? QrValidTill { get; set; }
         public List<SendQrItemDto> QrItems { get; set; } = new();
     }
 

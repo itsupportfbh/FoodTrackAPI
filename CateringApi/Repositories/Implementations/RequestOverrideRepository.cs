@@ -22,12 +22,13 @@ namespace CateringApi.Repositories.Implementations
         public async Task<RequestOverrideScreenDto?> GetScreenDataAsync(
             int requestHeaderId,
             DateTime fromDate,
-            DateTime toDate)
+            DateTime toDate,int? requestOverrideId)
         {
             var param = new DynamicParameters();
             param.Add("@RequestHeaderId", requestHeaderId);
             param.Add("@FromDate", fromDate.Date);
             param.Add("@ToDate", toDate.Date);
+            param.Add("@RequestOverrideId", requestOverrideId);
 
             using var multi = await Connection.QueryMultipleAsync(
                 "dbo.sp_RequestOverride_GetScreenData",
