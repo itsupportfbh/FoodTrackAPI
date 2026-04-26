@@ -269,5 +269,29 @@ namespace CateringApi.Repositories.Implementations
                 data = id
             };
         }
+
+
+        public async Task<IEnumerable<ShowQrDTO>> ShowQr(int companyId, int userId)
+        {
+            using var connection = CreateConnection();
+
+            var sql = @"
+SELECT
+    qi.Id AS QrImageId,
+    qi.QrCodeImage,
+    qi.QrCodeText,
+    qi.PlanType
+FROM QrUserAssignment qua
+INNER JOIN QrImage qi ON qi.Id = qua.QrImageId
+WHERE qua.CompanyId = @CompanyId
+  AND qua.UserId = @UserId;
+            ";
+
+            return await connection.QueryAsync<ShowQrDTO>(sql, new
+            {
+                CompanyId = companyId,
+                UserId = userId
+            });
+        }
     }
 }
