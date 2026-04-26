@@ -181,263 +181,172 @@ WHERE Id = @UserId
             const string mainSql = @"
 ;WITH DateSeries AS
 (
-    SELECT
-        rh.Id AS RequestHeaderId,
-        CAST(rh.FromDate AS date) AS ReportDate,
-        CAST(rh.ToDate AS date) AS EndDate
-    FROM dbo.RequestHeader rh
-    WHERE rh.IsActive = 1
-
+    SELECT CAST(@FromDate AS DATE) AS ReportDate
     UNION ALL
-
-    SELECT
-        ds.RequestHeaderId,
-        DATEADD(DAY, 1, ds.ReportDate),
-        ds.EndDate
-    FROM DateSeries ds
-    WHERE ds.ReportDate < ds.EndDate
+    SELECT DATEADD(DAY, 1, ReportDate)
+    FROM DateSeries
+    WHERE ReportDate < CAST(@ToDate AS DATE)
 ),
-EffectiveRows AS
+UserMealRows AS
 (
     SELECT
-        rh.CompanyId,
+        u.CompanyId,
         cm.CompanyName,
         ds.ReportDate,
-        s.Id AS SessionId,
-        s.Id AS SessionSortId,
-        s.SessionName,
-        cu.Id AS CuisineSortId,
+        ISNULL(u.PlanType, 'Basic') AS PlanType,
+        u.CuisineId,
         cu.CuisineName,
-        l.Id AS LocationSortId,
+        mr.LocationId,
         l.LocationName,
-
-        CAST(
-            CASE
-                WHEN rod.Id IS NOT NULL
-                     AND ISNULL(rod.IsCancelled, 0) = 0
-                     AND ro.Id IS NOT NULL
-                THEN rod.OverrideQty
-                ELSE rd.Qty
-            END
-        AS decimal(18,2)) AS EffectiveQty,
-
-        CAST(ISNULL(ratePick.Rate, 0) AS decimal(18,2)) AS Rate
+        u.Id AS UserId
     FROM DateSeries ds
-    INNER JOIN dbo.RequestHeader rh
-        ON rh.Id = ds.RequestHeaderId
-       AND rh.IsActive = 1
-    INNER JOIN dbo.RequestDetail rd
-        ON rd.RequestHeaderId = rh.Id
-       AND rd.IsActive = 1
-    INNER JOIN dbo.CompanyMaster cm
-        ON cm.Id = rh.CompanyId
-    INNER JOIN dbo.Session s
-        ON s.Id = rd.SessionId
-    INNER JOIN dbo.CuisineMaster cu
-        ON cu.Id = rd.CuisineId
-    INNER JOIN dbo.Location l
-        ON l.Id = rd.LocationId
+    INNER JOIN dbo.UserMaster u
+        ON u.IsActive = 1
+       AND ISNULL(u.IsDelete, 0) = 0
+      
 
-    OUTER APPLY
-    (
-        SELECT TOP 1 rox.Id
-        FROM dbo.RequestOverride rox
-        WHERE rox.RequestHeaderId = rh.Id
-          AND rox.IsActive = 1
-          AND ds.ReportDate BETWEEN CAST(rox.FromDate AS date) AND CAST(rox.ToDate AS date)
-        ORDER BY rox.Id DESC
-    ) roPick
-
-    LEFT JOIN dbo.RequestOverride ro
-        ON ro.Id = roPick.Id
-
-    LEFT JOIN dbo.RequestOverrideDetail rod
-        ON rod.RequestOverrideId = ro.Id
-       AND rod.RequestDetailId = rd.Id
-       AND rod.IsActive = 1
-
-   OUTER APPLY
+OUTER APPLY
 (
-    SELECT TOP 1 x.Rate
-    FROM
+    SELECT TOP 1 mrx.*
+    FROM dbo.MealRequest mrx
+    WHERE mrx.CompanyId = u.CompanyId
+      AND mrx.UserId = u.Id
+      AND ds.ReportDate BETWEEN CAST(mrx.FromDate AS DATE) AND CAST(mrx.ToDate AS DATE)
+    ORDER BY
+        CASE WHEN ISNULL(mrx.IsActive, 0) = 1 THEN 0 ELSE 1 END,
+        mrx.Id DESC
+) mr
+
+    INNER JOIN dbo.CompanyMaster cm
+        ON cm.Id = u.CompanyId
+
+    LEFT JOIN dbo.CuisineMaster cu
+        ON cu.Id = u.CuisineId
+
+    INNER JOIN dbo.Location l
+        ON l.Id = mr.LocationId
+
+    WHERE (@CompanyIdsCsv IS NULL OR u.CompanyId IN
     (
-        -- Current active default session price
-        SELECT
-            sp.Rate,
-            CAST(sp.EffectiveFrom AS date) AS EffectiveFrom,
-            CAST('9999-12-31' AS date) AS EffectiveTo,
-            1 AS SortOrder
-        FROM dbo.SessionPrice sp
-        WHERE sp.CompanyId = 0
-          AND sp.SessionId = rd.SessionId
-          AND sp.PlanType = rh.PlanType
-          AND sp.IsActive = 1
-          AND CAST(sp.EffectiveFrom AS date) <= ds.ReportDate
-
-        UNION ALL
-
-        -- Historical default session price
-        SELECT
-            sph.Rate,
-            CAST(sph.EffectiveFrom AS date) AS EffectiveFrom,
-            CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date) AS EffectiveTo,
-            2 AS SortOrder
-        FROM dbo.SessionPriceHistory sph
-        WHERE sph.CompanyId = 0
-          AND sph.SessionId = rd.SessionId
-          AND sph.PlanType = rh.PlanType
-          AND ds.ReportDate BETWEEN CAST(sph.EffectiveFrom AS date)
-                               AND CAST(ISNULL(sph.EffectiveTo, '9999-12-31') AS date)
-    ) x
-    WHERE ds.ReportDate BETWEEN x.EffectiveFrom AND x.EffectiveTo
-    ORDER BY x.EffectiveFrom DESC, x.SortOrder ASC
-) ratePick
-    WHERE (@CompanyIdsCsv IS NULL OR rh.CompanyId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@CompanyIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
-      AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
-      AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-      AND (@SessionIdsCsv IS NULL OR rd.SessionId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@SessionIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
-      AND (@CuisineIdsCsv IS NULL OR rd.CuisineId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@CuisineIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
-      AND (@LocationIdsCsv IS NULL OR rd.LocationId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@LocationIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
+        SELECT TRY_CAST(value AS INT)
+        FROM STRING_SPLIT(@CompanyIdsCsv, ',')
+        WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
+    AND (@CuisineIdsCsv IS NULL OR u.CuisineId IN
+    (
+        SELECT TRY_CAST(value AS INT)
+        FROM STRING_SPLIT(@CuisineIdsCsv, ',')
+        WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
+    AND (@LocationIdsCsv IS NULL OR mr.LocationId IN
+    (
+        SELECT TRY_CAST(value AS INT)
+        FROM STRING_SPLIT(@LocationIdsCsv, ',')
+        WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
 )
 SELECT
-    CompanyName,
-    ReportDate,
-    SessionName,
-    CuisineName,
-    LocationName,
-    SUM(EffectiveQty) AS Count,
-    Rate,
-    SUM(EffectiveQty * Rate) AS TotalAmount
-FROM EffectiveRows
+    umr.CompanyName,
+    umr.ReportDate,
+    umr.PlanType,
+    umr.CuisineName,
+    umr.LocationName,
+    COUNT(umr.UserId) AS Count,
+    ISNULL(price.Rate, 0) AS Rate,
+    COUNT(umr.UserId) * ISNULL(price.Rate, 0) AS TotalAmount
+FROM UserMealRows umr
+OUTER APPLY
+(
+    SELECT SUM(ISNULL(sp.Rate, 0)) AS Rate
+    FROM dbo.SessionPrice sp
+    WHERE sp.PlanType = umr.PlanType
+      AND sp.CompanyId = 0
+      AND sp.IsActive = 1
+      AND CAST(sp.EffectiveFrom AS DATE) =
+      (
+          SELECT MAX(CAST(sp2.EffectiveFrom AS DATE))
+          FROM dbo.SessionPrice sp2
+          WHERE sp2.PlanType = umr.PlanType
+            AND sp2.CompanyId = 0
+            AND sp2.IsActive = 1
+            AND CAST(sp2.EffectiveFrom AS DATE) <= umr.ReportDate
+      )
+) price
 GROUP BY
-    CompanyName,
-    ReportDate,
-    SessionSortId,
-    SessionName,
-    CuisineSortId,
-    CuisineName,
-    LocationSortId,
-    LocationName,
-    Rate
+    umr.CompanyName,
+    umr.ReportDate,
+    umr.PlanType,
+    umr.CuisineName,
+    umr.LocationName,
+    price.Rate
 ORDER BY
-    CompanyName,
-    ReportDate DESC,
-    SessionSortId,
-    CuisineSortId,
-    LocationSortId
+    umr.CompanyName,
+    umr.ReportDate DESC,
+    umr.PlanType,
+    umr.CuisineName,
+    umr.LocationName
 OPTION (MAXRECURSION 366);";
 
             const string totalSql = @"
 ;WITH DateSeries AS
 (
-    SELECT
-        rh.Id AS RequestHeaderId,
-        CAST(rh.FromDate AS date) AS ReportDate,
-        CAST(rh.ToDate AS date) AS EndDate
-    FROM dbo.RequestHeader rh
-    WHERE rh.IsActive = 1
-
+    SELECT CAST(@FromDate AS DATE) AS ReportDate
     UNION ALL
-
-    SELECT
-        ds.RequestHeaderId,
-        DATEADD(DAY, 1, ds.ReportDate),
-        ds.EndDate
-    FROM DateSeries ds
-    WHERE ds.ReportDate < ds.EndDate
+    SELECT DATEADD(DAY, 1, ReportDate)
+    FROM DateSeries
+    WHERE ReportDate < CAST(@ToDate AS DATE)
 ),
-EffectiveRows AS
+UserMealLocation AS
 (
     SELECT
-        cu.CuisineName,
-        CASE
-            WHEN rod.Id IS NOT NULL
-                 AND ISNULL(rod.IsCancelled, 0) = 0
-                 AND ro.Id IS NOT NULL
-            THEN rod.OverrideQty
-            ELSE rd.Qty
-        END AS EffectiveQty
+        u.CompanyId,
+        u.Id AS UserId,
+        ISNULL(u.PlanType, 'Basic') AS PlanType,
+        u.CuisineId,
+        ds.ReportDate,
+        mr.LocationId
     FROM DateSeries ds
-    INNER JOIN dbo.RequestHeader rh
-        ON rh.Id = ds.RequestHeaderId
-       AND rh.IsActive = 1
-    INNER JOIN dbo.RequestDetail rd
-        ON rd.RequestHeaderId = rh.Id
-       AND rd.IsActive = 1
-    INNER JOIN dbo.CuisineMaster cu
-        ON cu.Id = rd.CuisineId
+    INNER JOIN dbo.UserMaster u
+        ON u.IsActive = 1
+       AND ISNULL(u.IsDelete, 0) = 0
+OUTER APPLY
+(
+    SELECT TOP 1 mrx.*
+    FROM dbo.MealRequest mrx
+    WHERE mrx.CompanyId = u.CompanyId
+      AND mrx.UserId = u.Id
+      AND ds.ReportDate BETWEEN CAST(mrx.FromDate AS DATE) AND CAST(mrx.ToDate AS DATE)
+    ORDER BY
+        CASE WHEN ISNULL(mrx.IsActive, 0) = 1 THEN 0 ELSE 1 END,
+        mrx.Id DESC
+) mr
 
-    OUTER APPLY
+    WHERE (@CompanyIdsCsv IS NULL OR u.CompanyId IN
     (
-        SELECT TOP 1 rox.Id
-        FROM dbo.RequestOverride rox
-        WHERE rox.RequestHeaderId = rh.Id
-          AND rox.IsActive = 1
-          AND ds.ReportDate BETWEEN CAST(rox.FromDate AS date) AND CAST(rox.ToDate AS date)
-        ORDER BY rox.Id DESC
-    ) roPick
-
-    LEFT JOIN dbo.RequestOverride ro
-        ON ro.Id = roPick.Id
-
-    LEFT JOIN dbo.RequestOverrideDetail rod
-        ON rod.RequestOverrideId = ro.Id
-       AND rod.RequestDetailId = rd.Id
-       AND rod.IsActive = 1
-
-    WHERE (@CompanyIdsCsv IS NULL OR rh.CompanyId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@CompanyIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
-      AND (@FromDate IS NULL OR ds.ReportDate >= CAST(@FromDate AS date))
-      AND (@ToDate IS NULL OR ds.ReportDate <= CAST(@ToDate AS date))
-      AND (@SessionIdsCsv IS NULL OR rd.SessionId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@SessionIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
-      AND (@CuisineIdsCsv IS NULL OR rd.CuisineId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@CuisineIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
-      AND (@LocationIdsCsv IS NULL OR rd.LocationId IN
-        (
-            SELECT TRY_CAST(value AS INT)
-            FROM STRING_SPLIT(@LocationIdsCsv, ',')
-            WHERE TRY_CAST(value AS INT) IS NOT NULL
-        ))
+        SELECT TRY_CAST(value AS INT)
+        FROM STRING_SPLIT(@CompanyIdsCsv, ',')
+        WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
 )
 SELECT
-    CuisineName,
-    SUM(EffectiveQty) AS TotalQty
-FROM EffectiveRows
-GROUP BY CuisineName
-ORDER BY CuisineName
+    cu.CuisineName,
+    COUNT(uml.UserId) AS TotalQty
+FROM UserMealLocation uml
+LEFT JOIN dbo.CuisineMaster cu ON cu.Id = uml.CuisineId
+WHERE (@CuisineIdsCsv IS NULL OR uml.CuisineId IN
+(
+    SELECT TRY_CAST(value AS INT)
+    FROM STRING_SPLIT(@CuisineIdsCsv, ',')
+    WHERE TRY_CAST(value AS INT) IS NOT NULL
+))
+AND (@LocationIdsCsv IS NULL OR uml.LocationId IN
+(
+    SELECT TRY_CAST(value AS INT)
+    FROM STRING_SPLIT(@LocationIdsCsv, ',')
+    WHERE TRY_CAST(value AS INT) IS NOT NULL
+))
+GROUP BY cu.CuisineName
+ORDER BY cu.CuisineName
 OPTION (MAXRECURSION 366);";
 
             var sqlParams = new
@@ -565,9 +474,9 @@ OPTION (MAXRECURSION 366);";
             ws.Cells[row, 6].Value = model.ToDate?.ToString("dd-MM-yyyy") ?? "";
             row++;
 
-            ws.Cells[row, 1].Value = "Session:";
+            ws.Cells[row, 1].Value = "Plan Type:";
             ws.Cells[row, 1].Style.Font.Bold = true;
-            ws.Cells[row, 2].Value = sessionText;
+            ws.Cells[row, 2].Value = "All plan types";
 
             ws.Cells[row, 3].Value = "Cuisine:";
             ws.Cells[row, 3].Style.Font.Bold = true;
@@ -578,39 +487,39 @@ OPTION (MAXRECURSION 366);";
             ws.Cells[row, 6].Value = locationText;
             row += 2;
 
-            ws.Cells[row, 1].Value = "Session & Cuisine Totals";
+            ws.Cells[row, 1].Value = "Plan Type & Cuisine Totals";
             ws.Cells[row, 1].Style.Font.Bold = true;
             ws.Cells[row, 1].Style.Font.Size = 13;
             row++;
 
             var grouped = rows
-                .GroupBy(x => x.SessionName)
-                .Select(g => new
-                {
-                    Session = g.Key,
-                    Total = g.Sum(x => Convert.ToDecimal(x.Count)),
-                    Cuisines = g.GroupBy(x => x.CuisineName)
-                                .Select(c => new
-                                {
-                                    Cuisine = c.Key,
-                                    Total = c.Sum(x => Convert.ToDecimal(x.Count))
-                                }).ToList()
-                })
-                .ToList();
+     .GroupBy(x => x.PlanType)
+     .Select(g => new
+     {
+         PlanType = g.Key ?? "Basic",
+         Total = g.Sum(x => Convert.ToDecimal(x.Count)),
+         Cuisines = g.GroupBy(x => x.CuisineName)
+                     .Select(c => new
+                     {
+                         Cuisine = c.Key ?? "Unknown",
+                         Total = c.Sum(x => Convert.ToDecimal(x.Count))
+                     }).ToList()
+     })
+     .ToList();
 
-            foreach (var session in grouped)
+            foreach (var plan in grouped)
             {
-                ws.Cells[row, 1].Value = session.Session;
+                ws.Cells[row, 1].Value = plan.PlanType;
                 ws.Cells[row, 1].Style.Font.Bold = true;
 
                 ws.Cells[row, 2].Value = "Total Count";
                 ws.Cells[row, 2].Style.Font.Bold = true;
 
-                ws.Cells[row, 3].Value = session.Total;
+                ws.Cells[row, 3].Value = plan.Total;
                 ws.Cells[row, 3].Style.Font.Bold = true;
                 row++;
 
-                foreach (var c in session.Cuisines)
+                foreach (var c in plan.Cuisines)
                 {
                     ws.Cells[row, 2].Value = c.Cuisine;
                     ws.Cells[row, 3].Value = c.Total;
@@ -624,7 +533,7 @@ OPTION (MAXRECURSION 366);";
 
             ws.Cells[row, 1].Value = "Company";
             ws.Cells[row, 2].Value = "Date";
-            ws.Cells[row, 3].Value = "Session";
+            ws.Cells[row, 3].Value = "Plan Type";
             ws.Cells[row, 4].Value = "Cuisine";
             ws.Cells[row, 5].Value = "Location";
             ws.Cells[row, 6].Value = "Count";
@@ -646,7 +555,7 @@ OPTION (MAXRECURSION 366);";
                 ws.Cells[row, 1].Value = item.CompanyName;
                 ws.Cells[row, 2].Value = item.ReportDate;
                 ws.Cells[row, 2].Style.Numberformat.Format = "dd-MM-yyyy";
-                ws.Cells[row, 3].Value = item.SessionName;
+                ws.Cells[row, 3].Value = item.PlanType;
                 ws.Cells[row, 4].Value = item.CuisineName;
                 ws.Cells[row, 5].Value = item.LocationName;
                 ws.Cells[row, 6].Value = item.Count;

@@ -179,17 +179,11 @@ SELECT
     rd.Id,
     rd.RequestHeaderId,
     rd.PlanType,
-    rd.SessionId,
-    s.SessionName,
     rd.CuisineId,
     cm.CuisineName,
-    rd.LocationId,
-    l.LocationName,
     rd.Qty
 FROM dbo.RequestDetail rd
 INNER JOIN dbo.CuisineMaster cm ON cm.Id = rd.CuisineId
-LEFT JOIN dbo.Session s ON s.Id = rd.SessionId
-LEFT JOIN dbo.Location l ON l.Id = rd.LocationId
 WHERE rd.RequestHeaderId = @Id
   AND rd.IsActive = 1
 ORDER BY rd.Id;";
