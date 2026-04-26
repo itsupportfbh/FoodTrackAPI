@@ -18,6 +18,7 @@
         public List<int>? SessionIds { get; set; }
         public List<int>? CuisineIds { get; set; }
         public List<int>? LocationIds { get; set; }
+        public List<string>? PlanTypes { get; set; }
     }
 
     public class ReportByDateRowDto
@@ -27,6 +28,7 @@
         public string SessionName { get; set; } = string.Empty;
         public string CuisineName { get; set; } = string.Empty;
         public string LocationName { get; set; } = string.Empty;
+        public string? PlanType { get; set; }
         public decimal Count { get; set; }
         public decimal Rate { get; set; }
         public decimal TotalAmount { get; set; }

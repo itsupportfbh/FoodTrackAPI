@@ -71,14 +71,8 @@
 
         public string PlanType { get; set; } = string.Empty;
 
-        public int SessionId { get; set; }
-        public string SessionName { get; set; } = string.Empty;
-
         public int CuisineId { get; set; }
         public string CuisineName { get; set; } = string.Empty;
-
-        public int LocationId { get; set; }
-        public string LocationName { get; set; } = string.Empty;
 
         public decimal Qty { get; set; }
     }
