@@ -9,7 +9,7 @@ namespace CateringApi.DTOs.Request
     {
         public int Id { get; set; }
 
-        public int RequestHeaderId { get; set; }
+        public int? RequestHeaderId { get; set; }
 
         public int? SessionId { get; set; }
 

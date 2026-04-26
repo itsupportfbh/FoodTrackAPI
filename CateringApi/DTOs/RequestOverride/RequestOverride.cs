@@ -6,7 +6,7 @@ namespace CateringApi.DTOs.RequestOverride
     public class RequestOverride
     {
         public int Id { get; set; }
-        public int RequestHeaderId { get; set; }
+        public int? RequestHeaderId { get; set; }
         public DateTime FromDate { get; set; }
         public DateTime ToDate { get; set; }
         public bool IsActive { get; set; }
