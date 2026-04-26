@@ -2,6 +2,7 @@
 using CateringApi.DTOs;
 using CateringApi.DTOs.Company;
 using CateringApi.DTOs.Master;
+using CateringApi.DTOs.MealPlan;
 using CateringApi.DTOs.Request;
 using CateringApi.DTOs.RequestOverride;
 using CateringApi.DTOs.Scanner;
@@ -36,6 +37,7 @@ namespace CateringApi.Data
         public DbSet<UserMaster1> UserMaster1 { get; set; }
         public DbSet<PriceListDto> SessionPrice {  get; set; }
         public DbSet<QrUserAssignment> QrUserAssignment { get; set; }
+        public DbSet<SaveMealRequestDto> MealRequest { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

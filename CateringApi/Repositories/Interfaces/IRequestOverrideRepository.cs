@@ -5,7 +5,10 @@ namespace CateringApi.Repositories.Interfaces
 {
     public interface IRequestOverrideRepository
     {
-        Task<RequestOverrideScreenDto?> GetScreenDataAsync(int requestHeaderId, DateTime fromDate, DateTime toDate);
+        Task<RequestOverrideScreenDto?> GetScreenDataAsync(
+              int requestHeaderId,
+              DateTime fromDate,
+              DateTime toDate, int? requestOverrideId);
         Task<SaveRequestOverrideResultDto> SaveAsync(SaveRequestOverrideDto dto);
 
         Task<List<RequestOverrideListDto>> GetOverrideList(int companyId);
