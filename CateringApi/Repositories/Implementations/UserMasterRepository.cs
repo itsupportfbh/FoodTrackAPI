@@ -230,28 +230,9 @@ VALUES
                 userMaster.RoleId = 4;
 
             userMaster.PlanType = ValidatePlanType(userMaster.PlanType);
+            userMaster.UpdatedDate = DateTime.Now;
 
             using var con = _context.CreateConnection();
-
-            var duplicateCheck = await con.ExecuteScalarAsync<int>(@"
-SELECT COUNT(1)
-FROM UserMaster
-WHERE ISNULL(IsDelete, 0) = 0
-AND Id <> @Id
-AND (
-    LOWER(UserName) = LOWER(@UserName)
-    OR LOWER(Email) = LOWER(@Email)
-);", new
-            {
-                userMaster.Id,
-                userMaster.UserName,
-                userMaster.Email
-            });
-
-            if (duplicateCheck > 0)
-                throw new Exception("UserName or Email already exists.");
-
-            userMaster.UpdatedDate = DateTime.Now;
 
             string query;
             object param;
@@ -274,21 +255,6 @@ SET
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate
 WHERE Id = @Id;";
-
-                param = new
-                {
-                    userMaster.Id,
-                    userMaster.CompanyId,
-                    userMaster.RoleId,
-                    userMaster.PlanType,
-                    userMaster.CuisineId,
-                    userMaster.UserName,
-                    userMaster.Email,
-                    userMaster.PasswordHash,
-                    userMaster.IsActive,
-                    userMaster.UpdatedBy,
-                    userMaster.UpdatedDate
-                };
             }
             else
             {
@@ -298,26 +264,29 @@ SET
     CompanyId = @CompanyId,
     RoleId = @RoleId,
     PlanType = @PlanType,
+    CuisineId = @CuisineId,
     UserName = @UserName,
     Email = @Email,
     IsActive = @IsActive,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate
 WHERE Id = @Id;";
-
-                param = new
-                {
-                    userMaster.Id,
-                    userMaster.CompanyId,
-                    userMaster.RoleId,
-                    userMaster.PlanType,
-                    userMaster.UserName,
-                    userMaster.Email,
-                    userMaster.IsActive,
-                    userMaster.UpdatedBy,
-                    userMaster.UpdatedDate
-                };
             }
+
+            param = new
+            {
+                userMaster.Id,
+                userMaster.CompanyId,
+                userMaster.RoleId,
+                userMaster.PlanType,
+                userMaster.CuisineId,
+                userMaster.UserName,
+                userMaster.Email,
+                userMaster.PasswordHash,
+                userMaster.IsActive,
+                userMaster.UpdatedBy,
+                userMaster.UpdatedDate
+            };
 
             await con.ExecuteAsync(query, param);
         }
@@ -368,15 +337,13 @@ WHERE Id = @Id;";
             worksheet.Cells[1, 1].Value = "UserName";
             worksheet.Cells[1, 2].Value = "Email";
             worksheet.Cells[1, 3].Value = "Password";
-            worksheet.Cells[1, 4].Value = "IsActive";
-            worksheet.Cells[1, 5].Value = "PlanType";
-            worksheet.Cells[1, 6].Value = "Cuisine";
+            worksheet.Cells[1, 4].Value = "PlanType";
+            worksheet.Cells[1, 5].Value = "Cuisine";
 
             worksheet.Cells[2, 1].Value = "John Peter";
             worksheet.Cells[2, 2].Value = "john@company.com";
             worksheet.Cells[2, 3].Value = "123456";
-            worksheet.Cells[2, 4].Value = "TRUE";
-            worksheet.Cells[2, 5].Value = "Basic";
+            worksheet.Cells[2, 4].Value = "Basic";
 
             planSheet.Cells[1, 1].Value = "Basic";
             planSheet.Cells[2, 1].Value = "Standard";
@@ -398,10 +365,10 @@ ORDER BY CuisineName;
 
             if (cuisines.Count > 0)
             {
-                worksheet.Cells[2, 6].Value = cuisines[0];
+                worksheet.Cells[2, 5].Value = cuisines[0];
             }
 
-            var planValidation = worksheet.DataValidations.AddListValidation("E2:E1000");
+            var planValidation = worksheet.DataValidations.AddListValidation("D2:D1000");
             planValidation.Formula.ExcelFormula = "PlanTypes!$A$1:$A$3";
             planValidation.ShowErrorMessage = true;
             planValidation.ErrorTitle = "Invalid Plan Type";
@@ -409,14 +376,14 @@ ORDER BY CuisineName;
 
             if (cuisines.Count > 0)
             {
-                var cuisineValidation = worksheet.DataValidations.AddListValidation("F2:F1000");
+                var cuisineValidation = worksheet.DataValidations.AddListValidation("E2:E1000");
                 cuisineValidation.Formula.ExcelFormula = $"Cuisines!$A$1:$A${cuisines.Count}";
                 cuisineValidation.ShowErrorMessage = true;
                 cuisineValidation.ErrorTitle = "Invalid Cuisine";
                 cuisineValidation.Error = "Please select Cuisine from dropdown.";
             }
 
-            worksheet.Cells[1, 1, 1, 6].Style.Font.Bold = true;
+            worksheet.Cells[1, 1, 1, 5].Style.Font.Bold = true;
             worksheet.Cells.AutoFitColumns();
 
             return await Task.FromResult(package.GetAsByteArray());
@@ -456,14 +423,14 @@ ORDER BY CuisineName;
                 var userName = worksheet.Cells[row, 1].Text?.Trim();
                 var email = worksheet.Cells[row, 2].Text?.Trim();
                 var password = worksheet.Cells[row, 3].Text?.Trim();
-                var isActiveText = worksheet.Cells[row, 4].Text?.Trim();
-                var planTypeText = worksheet.Cells[row, 5].Text?.Trim();
-                var cuisineNameText = worksheet.Cells[row, 6].Text?.Trim();
+                var planTypeText = worksheet.Cells[row, 4].Text?.Trim();
+                var cuisineNameText = worksheet.Cells[row, 5].Text?.Trim();
 
                 if (
                     string.IsNullOrWhiteSpace(userName) &&
                     string.IsNullOrWhiteSpace(email) &&
-                    string.IsNullOrWhiteSpace(planTypeText)
+                    string.IsNullOrWhiteSpace(planTypeText) &&
+                    string.IsNullOrWhiteSpace(cuisineNameText)
                 )
                     continue;
 
@@ -480,14 +447,16 @@ ORDER BY CuisineName;
                 if (!string.IsNullOrWhiteSpace(cuisineNameText))
                 {
                     var cuisine = await con.QueryFirstOrDefaultAsync<dynamic>(@"
-        SELECT Id 
-        FROM CuisineMaster 
-        WHERE LOWER(CuisineName) = LOWER(@CuisineName)
-        AND IsActive = 1
-    ", new { CuisineName = cuisineNameText });
+SELECT Id
+FROM CuisineMaster
+WHERE LOWER(CuisineName) = LOWER(@CuisineName)
+AND IsActive = 1;", new
+                    {
+                        CuisineName = cuisineNameText
+                    });
 
                     if (cuisine == null)
-                        throw new Exception($"Row {row}: Invalid Cuisine '{cuisineNameText}'");
+                        throw new Exception($"Row {row}: Invalid Cuisine '{cuisineNameText}'.");
 
                     cuisineId = (int)cuisine.Id;
                 }
@@ -497,9 +466,6 @@ ORDER BY CuisineName;
                 }
 
                 bool isActive = true;
-
-                if (!string.IsNullOrWhiteSpace(isActiveText))
-                    bool.TryParse(isActiveText, out isActive);
 
                 var existingUser = await con.QueryFirstOrDefaultAsync<dynamic>(@"
 SELECT TOP 1 Id
