@@ -268,6 +268,12 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
                     var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
 
+
+
+                    var firstCuisineId = dto.CuisineIds != null && dto.CuisineIds.Any()
+        ? dto.CuisineIds.First()
+        : 0;
+
                     const string insertUserSql = @"
 INSERT INTO dbo.UserMaster
 (
@@ -279,7 +285,8 @@ INSERT INTO dbo.UserMaster
     IsActive,
     CreatedBy,
     CreatedDate,
-PlanType
+    PlanType,
+    CuisineId
 )
 VALUES
 (
@@ -291,7 +298,8 @@ VALUES
     1,
     @CreatedBy,
     GETDATE(),
-'Basic'
+    'Basic',
+    @CuisineId
 );";
 
                     await con.ExecuteAsync(insertUserSql, new
@@ -301,7 +309,8 @@ VALUES
                         Username = dto.ContactPerson,
                         Email = dto.Email,
                         PasswordHash = passwordHash,
-                        CreatedBy = dto.UserId
+                        CreatedBy = dto.UserId,
+                        CuisineId = firstCuisineId
                     }, tx);
                 }
 
