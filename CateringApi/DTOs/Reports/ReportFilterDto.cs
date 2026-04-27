@@ -13,6 +13,8 @@
         public DateTime? FromDate { get; set; }
         public DateTime? ToDate { get; set; }
 
+        public string? ReportType { get; set; }
+
         // new multi-select support
         public List<int>? CompanyIds { get; set; }
         public List<int>? SessionIds { get; set; }
@@ -54,6 +56,7 @@
 
     public class ReportEmailRequestDto : ReportFilterDto
     {
+        public string? ReportType { get; set; }
         public string ToEmail { get; set; } = string.Empty;
         public string Subject { get; set; } = "Report By Dates";
         public string Body { get; set; } = "Please find the attached report.";
