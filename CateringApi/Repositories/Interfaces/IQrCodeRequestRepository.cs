@@ -37,5 +37,8 @@ namespace CateringApi.Repositories.Interfaces
      string planType,
      int count,
      List<int> cuisineIds);
+
+
+        Task<List<LockedPlanTypeDto>> GetLockedPlanTypesAsync(int requestId);
     }
 }
