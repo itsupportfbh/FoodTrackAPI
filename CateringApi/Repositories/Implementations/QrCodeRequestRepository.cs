@@ -1708,5 +1708,30 @@ namespace CateringApi.Repositories.Implementations
 
             await smtp.SendMailAsync(message);
         }
+
+
+        public async Task<List<LockedPlanTypeDto>> GetLockedPlanTypesAsync(int requestId)
+        {
+            if (requestId <= 0)
+                return new List<LockedPlanTypeDto>();
+
+            var data = await _context.QrCodeRequest
+                .AsNoTracking()
+                .Where(x =>
+                    x.IsActive &&
+                    x.RequestId == requestId &&
+                    (x.ApprovalStatus == 0 || x.ApprovalStatus == 1))
+                .Select(x => new LockedPlanTypeDto
+                {
+                    PlanType = string.IsNullOrWhiteSpace(x.PlanType) ? "Basic" : x.PlanType.Trim(),
+                    ApprovalStatus = x.ApprovalStatus,
+                    StatusText = x.ApprovalStatus == 0 ? "Pending" :
+                                 x.ApprovalStatus == 1 ? "Approved" : ""
+                })
+                .Distinct()
+                .ToListAsync();
+
+            return data;
+        }
     }
 }

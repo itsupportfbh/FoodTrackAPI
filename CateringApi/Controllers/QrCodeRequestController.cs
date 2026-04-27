@@ -6,6 +6,7 @@ using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace CateringApi.Controllers
 {
@@ -179,6 +180,19 @@ namespace CateringApi.Controllers
             );
 
             return Ok(data);
+        }
+
+
+        [HttpGet("GetLockedPlanTypes")]
+        public async Task<IActionResult> GetLockedPlanTypes(int requestId)
+        {
+            var data = await _qrCodeRequestRepository.GetLockedPlanTypesAsync(requestId);
+
+            return Ok(new
+            {
+                isSuccess = true,
+                data = data
+            });
         }
     }
 }
