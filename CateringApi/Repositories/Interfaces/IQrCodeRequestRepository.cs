@@ -9,8 +9,8 @@ namespace CateringApi.Repositories.Interfaces
     {
         //  public Task<List<RequestDropdownDto>> GetRequestIdDropdown();
         // public Task<List<QrCodeRequest>> GetAllQR();
-        Task<List<RequestDropdownDto>> GetQrPendingDropdown();
-        public  Task<List<QrCodeRequestModel>> GetAllQRList();
+        Task<List<RequestDropdownDto>> GetQrPendingDropdown(int loginCompanyId);
+        Task<List<QrCodeRequestModel>> GetAllQRList(int loginRoleId, int loginCompanyId);
         public  Task<QrRequestWithImagesDto?> GetQrImageDetailsByRequestId(int requestId);
            //    public Task<List<QrCodeRequest>> GetAllQRModel();
         public  Task<QrCodeRequestModel> DeleteQrCode(int id, int userId);
