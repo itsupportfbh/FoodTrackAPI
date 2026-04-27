@@ -49,25 +49,29 @@ namespace CateringApi.Repositories.Implementations
                 : "";
 
             var sql = $@"
-IF OBJECT_ID('tempdb..#Final') IS NOT NULL DROP TABLE #Final;
-IF OBJECT_ID('tempdb..#PlanPrice') IS NOT NULL DROP TABLE #PlanPrice;
+IF OBJECT_ID('tempdb..#FinalPerDay') IS NOT NULL DROP TABLE #FinalPerDay;
 
-CREATE TABLE #Final
+CREATE TABLE #FinalPerDay
 (
     RequestHeaderId INT,
     CompanyId INT,
     CompanyName NVARCHAR(250),
     PlanType NVARCHAR(100),
-    Qty DECIMAL(18,2)
+    OrderDate DATE,
+    Qty DECIMAL(18,2),
+    PerDayRate DECIMAL(18,2),
+    TotalPrice DECIMAL(18,2)
 );
 
-CREATE TABLE #PlanPrice
+;WITH DateRange AS
 (
-    PlanType NVARCHAR(100),
-    PerDayRate DECIMAL(18,2)
-);
-
-;WITH ActiveHeaders AS
+    SELECT @FromDate AS OrderDate
+    UNION ALL
+    SELECT DATEADD(DAY, 1, OrderDate)
+    FROM DateRange
+    WHERE OrderDate < @ToDate
+),
+ActiveHeaders AS
 (
     SELECT
         rh.Id,
@@ -88,12 +92,16 @@ LatestOverride AS
 (
     SELECT
         x.Id,
-        x.RequestHeaderId
+        x.RequestHeaderId,
+        x.FromDate,
+        x.ToDate
     FROM
     (
         SELECT
             ro.Id,
             ro.RequestHeaderId,
+            ro.FromDate,
+            ro.ToDate,
             ROW_NUMBER() OVER
             (
                 PARTITION BY ro.RequestHeaderId
@@ -109,25 +117,20 @@ LatestOverride AS
     ) x
     WHERE x.rn = 1
 ),
-BaseRows AS
+BasePerDay AS
 (
     SELECT
         ah.Id AS RequestHeaderId,
         ah.CompanyId,
         ah.CompanyName,
         ISNULL(NULLIF(LTRIM(RTRIM(rd.PlanType)), ''), 'Basic') AS PlanType,
-        ISNULL(rd.Qty, 0) *
-        (
-            DATEDIFF
-            (
-                DAY,
-                CASE WHEN ah.FromDate < @FromDate THEN @FromDate ELSE ah.FromDate END,
-                CASE WHEN ah.ToDate > @ToDate THEN @ToDate ELSE ah.ToDate END
-            ) + 1
-        ) AS Qty
+        dr.OrderDate,
+        ISNULL(rd.Qty, 0) AS Qty
     FROM ActiveHeaders ah
     INNER JOIN RequestDetail rd
         ON rd.RequestHeaderId = ah.Id
+    INNER JOIN DateRange dr
+        ON dr.OrderDate BETWEEN ah.FromDate AND ah.ToDate
     WHERE
         rd.IsActive = 1
         AND NOT EXISTS
@@ -137,60 +140,139 @@ BaseRows AS
             WHERE lo.RequestHeaderId = ah.Id
         )
 ),
-OverrideRows AS
+OverridePerDay AS
 (
     SELECT
         ah.Id AS RequestHeaderId,
         ah.CompanyId,
         ah.CompanyName,
         ISNULL(NULLIF(LTRIM(RTRIM(rod.PlanType)), ''), 'Basic') AS PlanType,
-        ISNULL(rod.OverrideQty, 0) *
-        (
-            DATEDIFF(DAY, @FromDate, @ToDate) + 1
-        ) AS Qty
+        dr.OrderDate,
+        ISNULL(rod.OverrideQty, 0) AS Qty
     FROM LatestOverride lo
-    INNER JOIN RequestOverrideDetail rod
-        ON rod.RequestOverrideId = lo.Id
     INNER JOIN ActiveHeaders ah
         ON ah.Id = lo.RequestHeaderId
+    INNER JOIN RequestOverrideDetail rod
+        ON rod.RequestOverrideId = lo.Id
+    INNER JOIN DateRange dr
+        ON dr.OrderDate BETWEEN @FromDate AND @ToDate
     WHERE
         rod.IsActive = 1
         AND ISNULL(rod.IsCancelled, 0) = 0
 )
-INSERT INTO #Final
+INSERT INTO #FinalPerDay
 (
     RequestHeaderId,
     CompanyId,
     CompanyName,
     PlanType,
-    Qty
+    OrderDate,
+    Qty,
+    PerDayRate,
+    TotalPrice
 )
 SELECT
-    br.RequestHeaderId,
-    br.CompanyId,
-    br.CompanyName,
-    br.PlanType,
-    br.Qty
-FROM BaseRows br
-WHERE br.Qty > 0
-
-UNION ALL
+    x.RequestHeaderId,
+    x.CompanyId,
+    x.CompanyName,
+    x.PlanType,
+    x.OrderDate,
+    x.Qty,
+    ISNULL(price.PerDayRate, 0) AS PerDayRate,
+    x.Qty * ISNULL(price.PerDayRate, 0) AS TotalPrice
+FROM
+(
+    SELECT * FROM BasePerDay
+    UNION ALL
+    SELECT * FROM OverridePerDay
+) x
+OUTER APPLY
+(
+    SELECT
+        SUM(ISNULL(ph.Rate, 0)) AS PerDayRate
+    FROM
+    (
+        SELECT
+            p.SessionId,
+            p.Rate
+        FROM
+        (
+            SELECT
+                sph.SessionId,
+                sph.Rate,
+                ROW_NUMBER() OVER
+                (
+                    PARTITION BY sph.SessionId
+                    ORDER BY sph.EffectiveFrom DESC, sph.Id DESC
+                ) AS rn
+            FROM SessionPriceHistory sph
+            WHERE
+                LTRIM(RTRIM(sph.PlanType)) = LTRIM(RTRIM(x.PlanType))
+                AND sph.SessionId IN (1, 2, 3)
+                AND ISNULL(sph.ActionType, '') <> 'DELETE'
+                AND CAST(sph.EffectiveFrom AS DATE) <= x.OrderDate
+                AND (
+                    sph.EffectiveTo IS NULL
+                    OR CAST(sph.EffectiveTo AS DATE) >= x.OrderDate
+                )
+        ) p
+        WHERE p.rn = 1
+    ) ph
+) price
+WHERE x.Qty > 0
+OPTION (MAXRECURSION 32767);
 
 SELECT
-    orow.RequestHeaderId,
-    orow.CompanyId,
-    orow.CompanyName,
-    orow.PlanType,
-    orow.Qty
-FROM OverrideRows orow
-WHERE orow.Qty > 0;
+    COUNT(DISTINCT f.CompanyId) AS TotalCompanies,
+    COUNT(DISTINCT f.RequestHeaderId) AS TotalOrders,
+    ISNULL(SUM(CASE WHEN f.OrderDate = @Today THEN f.Qty ELSE 0 END), 0) AS TodayOrderedQty,
+    0 AS TodayRedeemedQty,
+    ISNULL(SUM(CASE WHEN f.OrderDate = @Today THEN f.Qty ELSE 0 END), 0) AS TodayPendingQty,
+    ISNULL(SUM(f.Qty), 0) AS MonthOrderedQty,
+    0 AS MonthRedeemedQty,
+    ISNULL(SUM(f.Qty), 0) AS MonthPendingQty,
+    ISNULL(SUM(f.TotalPrice), 0) AS TotalPrice
+FROM #FinalPerDay f;
 
-;WITH LatestHistoryPrice AS
+SELECT
+    f.PlanType,
+    ISNULL(SUM(f.Qty), 0) AS TotalQty
+FROM #FinalPerDay f
+GROUP BY f.PlanType
+ORDER BY f.PlanType;
+
+SELECT
+    0 AS SessionId,
+    f.PlanType AS SessionName,
+    ISNULL(SUM(f.Qty), 0) AS TotalQty
+FROM #FinalPerDay f
+GROUP BY f.PlanType
+ORDER BY f.PlanType;
+
+SELECT
+    f.PlanType,
+    0 AS SessionId,
+    f.PlanType AS SessionName,
+    ISNULL(SUM(f.Qty), 0) AS Qty,
+    CASE 
+        WHEN ISNULL(SUM(f.Qty), 0) = 0 THEN 0
+        ELSE ISNULL(SUM(f.TotalPrice), 0) / NULLIF(SUM(f.Qty), 0)
+    END AS Rate,
+    ISNULL(SUM(f.TotalPrice), 0) AS TotalPrice
+FROM #FinalPerDay f
+GROUP BY f.PlanType
+ORDER BY f.PlanType;
+
+SELECT
+    cp.PlanType,
+    0 AS SessionId,
+    cp.PlanType AS SessionName,
+    cp.PerDayRate AS Rate
+FROM
 (
     SELECT
         p.PlanType,
-        p.SessionId,
-        p.Rate
+        SUM(p.Rate) AS PerDayRate
     FROM
     (
         SELECT
@@ -205,75 +287,17 @@ WHERE orow.Qty > 0;
         FROM SessionPriceHistory sph
         WHERE
             sph.SessionId IN (1, 2, 3)
+            AND ISNULL(sph.ActionType, '') <> 'DELETE'
             AND CAST(sph.EffectiveFrom AS DATE) <= @ToDate
             AND (
                 sph.EffectiveTo IS NULL
-                OR CAST(sph.EffectiveTo AS DATE) >= @FromDate
+                OR CAST(sph.EffectiveTo AS DATE) >= @ToDate
             )
-            AND ISNULL(sph.ActionType, '') <> 'DELETE'
     ) p
     WHERE p.rn = 1
-)
-INSERT INTO #PlanPrice
-(
-    PlanType,
-    PerDayRate
-)
-SELECT
-    PlanType,
-    SUM(Rate) AS PerDayRate
-FROM LatestHistoryPrice
-GROUP BY PlanType;
-
-SELECT
-    COUNT(DISTINCT f.CompanyId) AS TotalCompanies,
-    COUNT(DISTINCT f.RequestHeaderId) AS TotalOrders,
-    ISNULL(SUM(CASE WHEN @Today BETWEEN @FromDate AND @ToDate THEN f.Qty ELSE 0 END), 0) AS TodayOrderedQty,
-    0 AS TodayRedeemedQty,
-    ISNULL(SUM(CASE WHEN @Today BETWEEN @FromDate AND @ToDate THEN f.Qty ELSE 0 END), 0) AS TodayPendingQty,
-    ISNULL(SUM(f.Qty), 0) AS MonthOrderedQty,
-    0 AS MonthRedeemedQty,
-    ISNULL(SUM(f.Qty), 0) AS MonthPendingQty,
-    ISNULL(SUM(f.Qty * ISNULL(pp.PerDayRate, 0)), 0) AS TotalPrice
-FROM #Final f
-LEFT JOIN #PlanPrice pp
-    ON LTRIM(RTRIM(pp.PlanType)) = LTRIM(RTRIM(f.PlanType));
-
-SELECT
-    f.PlanType,
-    ISNULL(SUM(f.Qty), 0) AS TotalQty
-FROM #Final f
-GROUP BY f.PlanType
-ORDER BY f.PlanType;
-
-SELECT
-    0 AS SessionId,
-    f.PlanType AS SessionName,
-    ISNULL(SUM(f.Qty), 0) AS TotalQty
-FROM #Final f
-GROUP BY f.PlanType
-ORDER BY f.PlanType;
-
-SELECT
-    f.PlanType,
-    0 AS SessionId,
-    f.PlanType AS SessionName,
-    ISNULL(SUM(f.Qty), 0) AS Qty,
-    ISNULL(MAX(pp.PerDayRate), 0) AS Rate,
-    ISNULL(SUM(f.Qty * ISNULL(pp.PerDayRate, 0)), 0) AS TotalPrice
-FROM #Final f
-LEFT JOIN #PlanPrice pp
-    ON LTRIM(RTRIM(pp.PlanType)) = LTRIM(RTRIM(f.PlanType))
-GROUP BY f.PlanType
-ORDER BY f.PlanType;
-
-SELECT
-    pp.PlanType,
-    0 AS SessionId,
-    pp.PlanType AS SessionName,
-    pp.PerDayRate AS Rate
-FROM #PlanPrice pp
-ORDER BY pp.PlanType;
+    GROUP BY p.PlanType
+) cp
+ORDER BY cp.PlanType;
 
 SELECT
     f.CompanyId,
@@ -281,12 +305,11 @@ SELECT
     ISNULL(SUM(f.Qty), 0) AS TotalQty,
     0 AS RedeemQty,
     ISNULL(SUM(f.Qty), 0) AS PendingQty
-FROM #Final f
+FROM #FinalPerDay f
 GROUP BY f.CompanyId, f.CompanyName
 ORDER BY TotalQty DESC;
 
-DROP TABLE #Final;
-DROP TABLE #PlanPrice;
+DROP TABLE #FinalPerDay;
 ";
 
             using var multi = await con.QueryMultipleAsync(sql, parameters);
