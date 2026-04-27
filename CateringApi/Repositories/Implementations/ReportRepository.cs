@@ -7,6 +7,7 @@ using CateringApi.Repositories.Interfaces;
 using CateringApi.Services;
 using Dapper;
 using OfficeOpenXml;
+using OfficeOpenXml.Table.PivotTable;
 
 namespace CateringApi.Repositories.Implementations
 {
@@ -180,6 +181,9 @@ WHERE Id = @UserId
             {
                 finalCompanyIdsCsv = companyIdsCsv;
             }
+            var reportType = string.IsNullOrWhiteSpace(model.ReportType)
+    ? "Detailed"
+    : model.ReportType.Trim();
 
             const string mainSql = @"
 ;WITH DateSeries AS
@@ -266,20 +270,39 @@ SELECT
 FROM UserMealRows umr
 OUTER APPLY
 (
-    SELECT SUM(ISNULL(sp.Rate, 0)) AS Rate
-    FROM dbo.SessionPrice sp
-    WHERE sp.PlanType = umr.PlanType
-      AND sp.CompanyId = 0
-      AND sp.IsActive = 1
-      AND CAST(sp.EffectiveFrom AS DATE) =
-      (
-          SELECT MAX(CAST(sp2.EffectiveFrom AS DATE))
-          FROM dbo.SessionPrice sp2
-          WHERE sp2.PlanType = umr.PlanType
-            AND sp2.CompanyId = 0
-            AND sp2.IsActive = 1
-            AND CAST(sp2.EffectiveFrom AS DATE) <= umr.ReportDate
-      )
+    SELECT SUM(ISNULL(x.Rate, 0)) AS Rate
+    FROM
+    (
+        SELECT
+            sp.SessionId,
+            sp.Rate
+        FROM dbo.SessionPrice sp
+        WHERE sp.PlanType = umr.PlanType
+          AND sp.CompanyId = 0
+          AND sp.IsActive = 1
+          AND CAST(sp.EffectiveFrom AS DATE) <= umr.ReportDate
+          AND NOT EXISTS
+          (
+              SELECT 1
+              FROM dbo.SessionPriceHistory h
+              WHERE h.PriceId = sp.Id
+                AND CAST(umr.ReportDate AS DATE)
+                    BETWEEN CAST(h.EffectiveFrom AS DATE)
+                    AND CAST(ISNULL(h.EffectiveTo, '9999-12-31') AS DATE)
+          )
+
+        UNION ALL
+
+        SELECT
+            h.SessionId,
+            h.Rate
+        FROM dbo.SessionPriceHistory h
+        WHERE h.PlanType = umr.PlanType
+          AND h.CompanyId = 0
+          AND CAST(umr.ReportDate AS DATE)
+              BETWEEN CAST(h.EffectiveFrom AS DATE)
+              AND CAST(ISNULL(h.EffectiveTo, '9999-12-31') AS DATE)
+    ) x
 ) price
 GROUP BY
     umr.CompanyName,
@@ -294,6 +317,156 @@ ORDER BY
     umr.PlanType,
     umr.CuisineName,
     umr.LocationName
+OPTION (MAXRECURSION 366);";
+
+            const string summarySql = @"
+;WITH DateSeries AS
+(
+    SELECT CAST(@FromDate AS DATE) AS ReportDate
+    UNION ALL
+    SELECT DATEADD(DAY, 1, ReportDate)
+    FROM DateSeries
+    WHERE ReportDate < CAST(@ToDate AS DATE)
+),
+UserMealRows AS
+(
+    SELECT
+        u.CompanyId,
+        cm.CompanyName,
+        ds.ReportDate,
+        ISNULL(u.PlanType, 'Basic') AS PlanType,
+        u.CuisineId,
+        cu.CuisineName,
+        mr.LocationId,
+        l.LocationName,
+        u.Id AS UserId
+    FROM DateSeries ds
+    INNER JOIN dbo.UserMaster u
+        ON u.IsActive = 1
+       AND ISNULL(u.IsDelete, 0) = 0
+
+    OUTER APPLY
+    (
+        SELECT TOP 1 mrx.*
+        FROM dbo.MealRequest mrx
+        WHERE mrx.CompanyId = u.CompanyId
+          AND mrx.UserId = u.Id
+          AND ds.ReportDate BETWEEN CAST(mrx.FromDate AS DATE) AND CAST(mrx.ToDate AS DATE)
+        ORDER BY
+            CASE WHEN ISNULL(mrx.IsActive, 0) = 1 THEN 0 ELSE 1 END,
+            mrx.Id DESC
+    ) mr
+
+    INNER JOIN dbo.CompanyMaster cm
+        ON cm.Id = u.CompanyId
+
+    LEFT JOIN dbo.CuisineMaster cu
+        ON cu.Id = u.CuisineId
+
+    INNER JOIN dbo.Location l
+        ON l.Id = mr.LocationId
+
+    WHERE (@CompanyIdsCsv IS NULL OR u.CompanyId IN
+    (
+        SELECT TRY_CAST(value AS INT)
+        FROM STRING_SPLIT(@CompanyIdsCsv, ',')
+        WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
+    AND (@CuisineIdsCsv IS NULL OR u.CuisineId IN
+    (
+        SELECT TRY_CAST(value AS INT)
+        FROM STRING_SPLIT(@CuisineIdsCsv, ',')
+        WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
+    AND (@PlanTypesCsv IS NULL OR ISNULL(u.PlanType, 'Basic') IN
+    (
+        SELECT LTRIM(RTRIM(value))
+        FROM STRING_SPLIT(@PlanTypesCsv, ',')
+        WHERE LTRIM(RTRIM(value)) <> ''
+    ))
+    AND (@LocationIdsCsv IS NULL OR mr.LocationId IN
+    (
+        SELECT TRY_CAST(value AS INT)
+        FROM STRING_SPLIT(@LocationIdsCsv, ',')
+        WHERE TRY_CAST(value AS INT) IS NOT NULL
+    ))
+),
+DetailedData AS
+(
+    SELECT
+        umr.CompanyName,
+        umr.ReportDate,
+        umr.PlanType,
+        umr.CuisineName,
+        umr.LocationName,
+        COUNT(umr.UserId) AS [Count],
+        ISNULL(price.Rate, 0) AS Rate,
+        COUNT(umr.UserId) * ISNULL(price.Rate, 0) AS TotalAmount
+    FROM UserMealRows umr
+    OUTER APPLY
+    (
+        SELECT SUM(ISNULL(x.Rate, 0)) AS Rate
+        FROM
+        (
+            SELECT
+                sp.SessionId,
+                sp.Rate
+            FROM dbo.SessionPrice sp
+            WHERE sp.PlanType = umr.PlanType
+              AND sp.CompanyId = 0
+              AND sp.IsActive = 1
+              AND CAST(sp.EffectiveFrom AS DATE) <= umr.ReportDate
+              AND NOT EXISTS
+              (
+                  SELECT 1
+                  FROM dbo.SessionPriceHistory h
+                  WHERE h.PriceId = sp.Id
+                    AND CAST(umr.ReportDate AS DATE)
+                        BETWEEN CAST(h.EffectiveFrom AS DATE)
+                        AND CAST(ISNULL(h.EffectiveTo, '9999-12-31') AS DATE)
+              )
+
+            UNION ALL
+
+            SELECT
+                h.SessionId,
+                h.Rate
+            FROM dbo.SessionPriceHistory h
+            WHERE h.PlanType = umr.PlanType
+              AND h.CompanyId = 0
+              AND CAST(umr.ReportDate AS DATE)
+                  BETWEEN CAST(h.EffectiveFrom AS DATE)
+                  AND CAST(ISNULL(h.EffectiveTo, '9999-12-31') AS DATE)
+        ) x
+    ) price
+    GROUP BY
+        umr.CompanyName,
+        umr.ReportDate,
+        umr.PlanType,
+        umr.CuisineName,
+        umr.LocationName,
+        price.Rate
+)
+SELECT
+    CompanyName,
+    NULL AS ReportDate,
+    PlanType,
+    CuisineName,
+    LocationName,
+    SUM([Count]) AS [Count],
+    0 AS Rate,
+    SUM(TotalAmount) AS TotalAmount
+FROM DetailedData
+GROUP BY
+    CompanyName,
+    PlanType,
+    CuisineName,
+    LocationName
+ORDER BY
+    CompanyName,
+    PlanType,
+    CuisineName,
+    LocationName
 OPTION (MAXRECURSION 366);";
 
             const string totalSql = @"
@@ -375,7 +548,11 @@ OPTION (MAXRECURSION 366);";
                 PlanTypesCsv = planTypesCsv
             };
 
-            var rows = await con.QueryAsync<ReportByDateRowDto>(mainSql, sqlParams);
+            var sqlToRun = reportType.Equals("Summary", StringComparison.OrdinalIgnoreCase)
+    ? summarySql
+    : mainSql;
+
+            var rows = await con.QueryAsync<ReportByDateRowDto>(sqlToRun, sqlParams);
 
             var totals = await con.QueryAsync<FoodTotalDto>(totalSql, sqlParams);
 
@@ -388,6 +565,13 @@ OPTION (MAXRECURSION 366);";
 
             var result = await GetReportByDatesAsync(model);
             var rows = result.Rows.ToList();
+            var reportType = string.IsNullOrWhiteSpace(model.ReportType)
+                ? "Detailed"
+                : model.ReportType.Trim();
+
+                        var reportTypeText = reportType.Equals("Summary", StringComparison.OrdinalIgnoreCase)
+                            ? "Summary Report"
+                            : "Detailed Report";
 
             using var con = _context.CreateConnection();
 
@@ -465,7 +649,7 @@ OPTION (MAXRECURSION 366);";
 
             int row = 1;
 
-            ws.Cells[row, 1].Value = "Report By Dates";
+            ws.Cells[row, 1].Value = $"Report By Dates - {reportTypeText}"; 
             ws.Cells[row, 1, row, 6].Merge = true;
             ws.Cells[row, 1].Style.Font.Size = 18;
             ws.Cells[row, 1].Style.Font.Bold = true;
@@ -488,7 +672,12 @@ OPTION (MAXRECURSION 366);";
             ws.Cells[row, 5].Value = "To Date:";
             ws.Cells[row, 5].Style.Font.Bold = true;
             ws.Cells[row, 6].Value = model.ToDate?.ToString("dd-MM-yyyy") ?? "";
+
+            ws.Cells[row, 7].Value = "Report Type:";
+            ws.Cells[row, 7].Style.Font.Bold = true;
+            ws.Cells[row, 8].Value = reportTypeText;
             row++;
+
 
             ws.Cells[row, 1].Value = "Plan Type:";
             ws.Cells[row, 1].Style.Font.Bold = true;
@@ -547,51 +736,105 @@ OPTION (MAXRECURSION 366);";
 
             row++;
 
-            ws.Cells[row, 1].Value = "Company";
-            ws.Cells[row, 2].Value = "Date";
-            ws.Cells[row, 3].Value = "Plan Type";
-            ws.Cells[row, 4].Value = "Cuisine";
-            ws.Cells[row, 5].Value = "Location";
-            ws.Cells[row, 6].Value = "Count";
-            ws.Cells[row, 7].Value = "Rate (S$)";
-            ws.Cells[row, 8].Value = "Total (S$)";
+            bool isSummary = reportType.Equals("Summary", StringComparison.OrdinalIgnoreCase);
 
-            using (var range = ws.Cells[row, 1, row, 8])
+            if (isSummary)
             {
-                range.Style.Font.Bold = true;
-                range.Style.Font.Size = 12;
-            }
+                ws.Cells[row, 1].Value = "Company";
+                ws.Cells[row, 2].Value = "Plan Type";
+                ws.Cells[row, 3].Value = "Cuisine";
+                ws.Cells[row, 4].Value = "Location";
+                ws.Cells[row, 5].Value = "Count";
+                ws.Cells[row, 6].Value = "Total (S$)";
 
-            row++;
+                using (var range = ws.Cells[row, 1, row, 6])
+                {
+                    range.Style.Font.Bold = true;
+                    range.Style.Font.Size = 12;
+                }
 
-            decimal grandTotalAmount = 0;
-
-            foreach (var item in rows)
-            {
-                ws.Cells[row, 1].Value = item.CompanyName;
-                ws.Cells[row, 2].Value = item.ReportDate;
-                ws.Cells[row, 2].Style.Numberformat.Format = "dd-MM-yyyy";
-                ws.Cells[row, 3].Value = item.PlanType;
-                ws.Cells[row, 4].Value = item.CuisineName;
-                ws.Cells[row, 5].Value = item.LocationName;
-                ws.Cells[row, 6].Value = item.Count;
-                ws.Cells[row, 7].Value = item.Rate;
-                ws.Cells[row, 7].Style.Numberformat.Format = "#,##0.00";
-
-                ws.Cells[row, 8].Value = item.TotalAmount;
-                ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
-
-                grandTotalAmount += Convert.ToDecimal(item.TotalAmount);
                 row++;
-            }
-            ws.Cells[row, 1, row, 7].Merge = true;
-            ws.Cells[row, 1].Value = "Grand Total (S$)";
-            ws.Cells[row, 1].Style.Font.Bold = true;
-            ws.Cells[row, 1].Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Right;
 
-            ws.Cells[row, 8].Value = grandTotalAmount;
-            ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
-            ws.Cells[row, 8].Style.Font.Bold = true;
+                decimal grandTotalCount = 0;
+                decimal grandTotalAmount = 0;
+
+                foreach (var item in rows)
+                {
+                    ws.Cells[row, 1].Value = item.CompanyName;
+                    ws.Cells[row, 2].Value = item.PlanType;
+                    ws.Cells[row, 3].Value = item.CuisineName;
+                    ws.Cells[row, 4].Value = item.LocationName;
+                    ws.Cells[row, 5].Value = item.Count;
+                    ws.Cells[row, 6].Value = item.TotalAmount;
+                    ws.Cells[row, 6].Style.Numberformat.Format = "#,##0.00";
+
+                    grandTotalCount += Convert.ToDecimal(item.Count);
+                    grandTotalAmount += Convert.ToDecimal(item.TotalAmount);
+                    row++;
+                }
+
+                ws.Cells[row, 1, row, 4].Merge = true;
+                ws.Cells[row, 1].Value = "Total Count";
+                ws.Cells[row, 1].Style.Font.Bold = true;
+                ws.Cells[row, 1].Style.HorizontalAlignment =
+                    OfficeOpenXml.Style.ExcelHorizontalAlignment.Right;
+
+                ws.Cells[row, 5].Value = grandTotalCount;
+                ws.Cells[row, 5].Style.Font.Bold = true;
+
+                ws.Cells[row, 6].Value = grandTotalAmount;
+                ws.Cells[row, 6].Style.Numberformat.Format = "#,##0.00";
+                ws.Cells[row, 6].Style.Font.Bold = true;
+            }
+            else
+            {
+                ws.Cells[row, 1].Value = "Company";
+                ws.Cells[row, 2].Value = "Date";
+                ws.Cells[row, 3].Value = "Plan Type";
+                ws.Cells[row, 4].Value = "Cuisine";
+                ws.Cells[row, 5].Value = "Location";
+                ws.Cells[row, 6].Value = "Count";
+                ws.Cells[row, 7].Value = "Rate (S$)";
+                ws.Cells[row, 8].Value = "Total (S$)";
+
+                using (var range = ws.Cells[row, 1, row, 8])
+                {
+                    range.Style.Font.Bold = true;
+                    range.Style.Font.Size = 12;
+                }
+
+                row++;
+
+                decimal grandTotalAmount = 0;
+
+                foreach (var item in rows)
+                {
+                    ws.Cells[row, 1].Value = item.CompanyName;
+                    ws.Cells[row, 2].Value = item.ReportDate;
+                    ws.Cells[row, 2].Style.Numberformat.Format = "dd-MM-yyyy";
+                    ws.Cells[row, 3].Value = item.PlanType;
+                    ws.Cells[row, 4].Value = item.CuisineName;
+                    ws.Cells[row, 5].Value = item.LocationName;
+                    ws.Cells[row, 6].Value = item.Count;
+                    ws.Cells[row, 7].Value = item.Rate;
+                    ws.Cells[row, 7].Style.Numberformat.Format = "#,##0.00";
+                    ws.Cells[row, 8].Value = item.TotalAmount;
+                    ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
+
+                    grandTotalAmount += Convert.ToDecimal(item.TotalAmount);
+                    row++;
+                }
+
+                ws.Cells[row, 1, row, 7].Merge = true;
+                ws.Cells[row, 1].Value = "Grand Total (S$)";
+                ws.Cells[row, 1].Style.Font.Bold = true;
+                ws.Cells[row, 1].Style.HorizontalAlignment =
+                    OfficeOpenXml.Style.ExcelHorizontalAlignment.Right;
+
+                ws.Cells[row, 8].Value = grandTotalAmount;
+                ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
+                ws.Cells[row, 8].Style.Font.Bold = true;
+            }
 
 
             if (ws.Dimension != null)
@@ -607,7 +850,34 @@ OPTION (MAXRECURSION 366);";
             if (string.IsNullOrWhiteSpace(model.ToEmail))
                 throw new Exception("Recipient email is required.");
 
-            var excelBytes = await ExportReportExcelAsync(model);
+            var reportType = string.IsNullOrWhiteSpace(model.ReportType)
+            ? "Detailed"
+            : model.ReportType.Trim();
+
+            var reportTypeText = reportType.Equals("Summary", StringComparison.OrdinalIgnoreCase)
+                ? "Summary"
+                : "Detailed";
+
+            var excelModel = new ReportFilterDto
+            {
+                UserId = model.UserId,
+                FromDate = model.FromDate,
+                ToDate = model.ToDate,
+                ReportType = reportType,
+
+                CompanyIds = model.CompanyIds,
+                PlanTypes = model.PlanTypes,
+                SessionIds = model.SessionIds,
+                CuisineIds = model.CuisineIds,
+                LocationIds = model.LocationIds,
+
+                CompanyId = model.CompanyId,
+                SessionId = model.SessionId,
+                CuisineId = model.CuisineId,
+                LocationId = model.LocationId
+            };
+
+            var excelBytes = await ExportReportExcelAsync(excelModel);
 
             using var con = _context.CreateConnection();
 
@@ -639,7 +909,7 @@ OPTION (MAXRECURSION 366);";
                 companyText = "AllCompanies";
             }
 
-            var fileName = $"CSPL_ReportByDates_{DateTime.Now:dd-MM-yyyy}_{companyText}.xlsx";
+            var fileName = $"CSPL_ReportByDates_{reportTypeText}_{DateTime.Now:dd-MM-yyyy}_{companyText}.xlsx";
 
             var subject = string.IsNullOrWhiteSpace(model.Subject)
                 ? "Report By Dates"
