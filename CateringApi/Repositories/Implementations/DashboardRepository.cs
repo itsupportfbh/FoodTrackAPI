@@ -112,7 +112,8 @@ BaseRows AS
         ISNULL(NULLIF(LTRIM(RTRIM(rd.PlanType)), ''), 'Basic') AS PlanType,
         ISNULL(rd.Qty, 0) *
         (
-            DATEDIFF(
+            DATEDIFF
+            (
                 DAY,
                 CASE WHEN ah.FromDate < @FromDate THEN @FromDate ELSE ah.FromDate END,
                 CASE WHEN ah.ToDate > @ToDate THEN @ToDate ELSE ah.ToDate END
@@ -187,13 +188,21 @@ SELECT
     ISNULL(SUM(f.Qty), 0) AS MonthOrderedQty,
     0 AS MonthRedeemedQty,
     ISNULL(SUM(f.Qty), 0) AS MonthPendingQty,
-    ISNULL(SUM(f.Qty * ISNULL(sp.Rate, 0)), 0) AS TotalPrice
+    ISNULL(SUM(f.Qty * ISNULL(pp.PerDayRate, 0)), 0) AS TotalPrice
 FROM #Final f
-LEFT JOIN SessionPrice sp
-    ON LTRIM(RTRIM(sp.PlanType)) = LTRIM(RTRIM(f.PlanType))
-    AND sp.IsActive = 1
-    AND sp.SessionId = 1
-    AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate;
+LEFT JOIN
+(
+    SELECT
+        sp.PlanType,
+        SUM(sp.Rate) AS PerDayRate
+    FROM SessionPrice sp
+    WHERE
+        sp.IsActive = 1
+        AND sp.SessionId IN (1, 2, 3)
+        AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
+    GROUP BY sp.PlanType
+) pp
+    ON LTRIM(RTRIM(pp.PlanType)) = LTRIM(RTRIM(f.PlanType));
 
 SELECT
     f.PlanType,
@@ -215,28 +224,43 @@ SELECT
     0 AS SessionId,
     f.PlanType AS SessionName,
     ISNULL(SUM(f.Qty), 0) AS Qty,
-    ISNULL(MAX(sp.Rate), 0) AS Rate,
-    ISNULL(SUM(f.Qty * ISNULL(sp.Rate, 0)), 0) AS TotalPrice
+    ISNULL(MAX(pp.PerDayRate), 0) AS Rate,
+    ISNULL(SUM(f.Qty * ISNULL(pp.PerDayRate, 0)), 0) AS TotalPrice
 FROM #Final f
-LEFT JOIN SessionPrice sp
-    ON LTRIM(RTRIM(sp.PlanType)) = LTRIM(RTRIM(f.PlanType))
-    AND sp.IsActive = 1
-    AND sp.SessionId = 1
-    AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
+LEFT JOIN
+(
+    SELECT
+        sp.PlanType,
+        SUM(sp.Rate) AS PerDayRate
+    FROM SessionPrice sp
+    WHERE
+        sp.IsActive = 1
+        AND sp.SessionId IN (1, 2, 3)
+        AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
+    GROUP BY sp.PlanType
+) pp
+    ON LTRIM(RTRIM(pp.PlanType)) = LTRIM(RTRIM(f.PlanType))
 GROUP BY f.PlanType
 ORDER BY f.PlanType;
 
 SELECT
-    sp.PlanType,
+    pp.PlanType,
     0 AS SessionId,
-    sp.PlanType AS SessionName,
-    sp.Rate
-FROM SessionPrice sp
-WHERE
-    sp.IsActive = 1
-    AND sp.SessionId = 1
-    AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
-ORDER BY sp.PlanType;
+    pp.PlanType AS SessionName,
+    pp.PerDayRate AS Rate
+FROM
+(
+    SELECT
+        sp.PlanType,
+        SUM(sp.Rate) AS PerDayRate
+    FROM SessionPrice sp
+    WHERE
+        sp.IsActive = 1
+        AND sp.SessionId IN (1, 2, 3)
+        AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
+    GROUP BY sp.PlanType
+) pp
+ORDER BY pp.PlanType;
 
 SELECT
     f.CompanyId,

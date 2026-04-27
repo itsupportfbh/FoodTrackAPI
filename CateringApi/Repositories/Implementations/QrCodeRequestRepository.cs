@@ -64,7 +64,7 @@ namespace CateringApi.Repositories.Implementations
             };
         }
 
-        public async Task<List<QrCodeRequestModel>> GetAllQRList()
+        public async Task<List<QrCodeRequestModel>> GetAllQRList(int loginRoleId, int loginCompanyId)
         {
             var result = await (
                 from qr in _context.QrCodeRequest
@@ -73,6 +73,10 @@ namespace CateringApi.Repositories.Implementations
                 join ro in _context.RequestOverride on qr.OverrideId equals ro.Id into roGroup
                 from ro in roGroup.DefaultIfEmpty()
                 where qr.IsActive
+                      && (
+                          loginRoleId == 1 ||
+                          qr.CompanyId == loginCompanyId
+                      )
                 select new QrCodeRequestModel
                 {
                     Id = qr.Id,
@@ -87,7 +91,9 @@ namespace CateringApi.Repositories.Implementations
                     NoofQR = qr.NoofQR,
                     QRValidFrom = qr.QRValidFrom,
                     QRValidTill = qr.QRValidTill,
-                    PlanType = !string.IsNullOrWhiteSpace(qr.PlanType) ? qr.PlanType : (rh.PlanType ?? "Basic"),
+                    PlanType = !string.IsNullOrWhiteSpace(qr.PlanType)
+                        ? qr.PlanType
+                        : (rh.PlanType ?? "Basic"),
                     IsActive = qr.IsActive,
                     CreatedDate = qr.CreatedDate,
                     UpdatedDate = qr.UpdatedDate,
@@ -130,7 +136,6 @@ namespace CateringApi.Repositories.Implementations
 
             return result;
         }
-
         public async Task<QrCodeRequestModel> DeleteQrCode(int id, int userId)
         {
             var entity = await _context.QrCodeRequest
@@ -743,7 +748,7 @@ namespace CateringApi.Repositories.Implementations
             }
         }
 
-        public async Task<List<RequestDropdownDto>> GetQrPendingDropdown()
+        public async Task<List<RequestDropdownDto>> GetQrPendingDropdown(int loginCompanyId)
         {
             var result = new List<RequestDropdownDto>();
 
@@ -751,6 +756,7 @@ namespace CateringApi.Repositories.Implementations
                 from rh in _context.RequestHeader
                 join cm in _context.CompanyMaster on rh.CompanyId equals cm.Id
                 where rh.IsActive
+                      && rh.CompanyId == loginCompanyId
                 select new
                 {
                     rh.Id,
@@ -924,7 +930,7 @@ namespace CateringApi.Repositories.Implementations
                             PlanType = planType,
                             Cuisines = cuisines,
                             DisplayText =
-    $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - {ov.FromDate:yyyy-MM-dd} to {ov.ToDate:yyyy-MM-dd} - Override #{ov.Id} - Different Qty {Convert.ToInt32(pendingQty)}"
+                                $"{req.RequestNo} - {req.CompanyName} - {planType} - {cuisineSummary} - {ov.FromDate:yyyy-MM-dd} to {ov.ToDate:yyyy-MM-dd} - Override #{ov.Id} - Different Qty {Convert.ToInt32(pendingQty)}"
                         });
                     }
                 }

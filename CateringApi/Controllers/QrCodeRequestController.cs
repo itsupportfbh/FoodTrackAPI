@@ -28,7 +28,14 @@ namespace CateringApi.Controllers
         [HttpGet("GetRequestIdDropdown")]
         public async Task<IActionResult> GetQrPendingDropdown()
         {
-            var data = await _qrCodeRequestRepository.GetQrPendingDropdown();
+            var companyIdClaim = User.Claims.FirstOrDefault(x => x.Type == "CompanyId")?.Value;
+
+            var loginCompanyId = string.IsNullOrWhiteSpace(companyIdClaim)
+                ? 0
+                : Convert.ToInt32(companyIdClaim);
+
+            var data = await _qrCodeRequestRepository.GetQrPendingDropdown(loginCompanyId);
+
             return Ok(data);
         }
 
@@ -53,7 +60,10 @@ namespace CateringApi.Controllers
         [HttpGet("GetAllQRList")]
         public async Task<IActionResult> GetAllQRList()
         {
-            var data = await _qrCodeRequestRepository.GetAllQRList();
+            int roleId = Convert.ToInt32(User.Claims.FirstOrDefault(x => x.Type == "RoleId")?.Value ?? "0");
+            int companyId = Convert.ToInt32(User.Claims.FirstOrDefault(x => x.Type == "CompanyId")?.Value ?? "0");
+
+            var data = await _qrCodeRequestRepository.GetAllQRList(roleId, companyId);
             return Ok(data);
         }
 
