@@ -1,9 +1,11 @@
 ﻿using CateringApi.Data;
 using CateringApi.DTOs;
 using CateringApi.DTOs.User;
+using CateringApi.Repositories.Implementations;
 using CateringApi.Repositories.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace CateringApi.Controllers
 {
@@ -64,19 +66,32 @@ namespace CateringApi.Controllers
             return Ok(new ResponseResult(true, "Success", roles));
         }
 
-        [HttpGet("DownloadUserTemplate")]
-        public async Task<IActionResult> DownloadUserTemplate()
+[HttpGet("DownloadUserTemplate")]
+    public async Task<IActionResult> DownloadUserTemplate([FromQuery] int companyId = 0)
+    {
+        if (companyId <= 0)
         {
-            var fileBytes = await _userMasterRepository.DownloadUserTemplateAsync();
+            var companyIdClaim =
+                User.FindFirst("CompanyId")?.Value ??
+                User.FindFirst("companyId")?.Value ??
+                User.FindFirst("CompanyID")?.Value;
 
-            return File(
-                fileBytes,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "User_Master_Template.xlsx"
-            );
+            int.TryParse(companyIdClaim, out companyId);
         }
 
-        [HttpPost("BulkUploadUsers")]
+        if (companyId <= 0)
+            return BadRequest(new { message = "Company is required to download template." });
+
+        var bytes = await _userMasterRepository.DownloadUserTemplateAsync(companyId);
+
+        return File(
+            bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "User_Template.xlsx"
+        );
+    }
+
+    [HttpPost("BulkUploadUsers")]
         public async Task<IActionResult> BulkUploadUsers(
      IFormFile file,
      [FromForm] int updatedBy,
