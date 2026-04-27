@@ -14,10 +14,12 @@ namespace CateringApi.Repositories.Implementations
     public class UserMasterRepository : IUserMasterRepository
     {
         private readonly DapperContext _context;
+        private readonly IEmailService _emailService;
 
-        public UserMasterRepository(DapperContext context)
+        public UserMasterRepository(DapperContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         private static string ValidatePlanType(string? planType, int row = 0)
@@ -157,7 +159,8 @@ AND (
             if (duplicateCheck > 0)
                 throw new Exception("UserName or Email already exists.");
 
-            var passwordHash = BCrypt.Net.BCrypt.HashPassword(userMaster.Password);
+            string plainPassword = userMaster.Password.Trim();
+            var passwordHash = BCrypt.Net.BCrypt.HashPassword(plainPassword);
             var createdDate = DateTime.Now;
             var updatedDate = DateTime.Now;
 
@@ -196,7 +199,7 @@ VALUES
     0
 );";
 
-            return await con.ExecuteScalarAsync<int>(query, new
+            int insertedId = await con.ExecuteScalarAsync<int>(query, new
             {
                 userMaster.CompanyId,
                 userMaster.RoleId,
@@ -211,6 +214,17 @@ VALUES
                 userMaster.UpdatedBy,
                 UpdatedDate = updatedDate
             });
+
+            string subject = "QrServeLogin Credentials";
+            string body = BuildUserCredentialEmail(
+                userMaster.UserName,
+                userMaster.Email,
+                plainPassword
+            );
+
+            await _emailService.SendEmailAsync(userMaster.Email, subject, body);
+
+            return insertedId;
         }
 
         public async Task UpdateAsync(UserMaster1 userMaster)
@@ -321,8 +335,11 @@ WHERE Id = @Id;";
             return await con.QueryAsync<RolesDTO>(sql);
         }
 
-        public async Task<byte[]> DownloadUserTemplateAsync()
+        public async Task<byte[]> DownloadUserTemplateAsync(int companyId)
         {
+            if (companyId <= 0)
+                throw new Exception("Company is required to download template.");
+
             ExcelPackage.License.SetNonCommercialPersonal("FBH Group");
 
             using var package = new ExcelPackage();
@@ -352,11 +369,13 @@ WHERE Id = @Id;";
             using var con = _context.CreateConnection();
 
             var cuisines = (await con.QueryAsync<string>(@"
-SELECT CuisineName
-FROM dbo.CuisineMaster
-WHERE IsActive = 1
-ORDER BY CuisineName;
-")).ToList();
+SELECT DISTINCT cm.CuisineName
+FROM CompanyCuisineMap ccm
+INNER JOIN CuisineMaster cm ON cm.Id = ccm.CuisineId
+WHERE ccm.CompanyId = @CompanyId
+AND cm.IsActive = 1
+ORDER BY cm.CuisineName;
+", new { CompanyId = companyId })).ToList();
 
             for (int i = 0; i < cuisines.Count; i++)
             {
@@ -416,6 +435,8 @@ ORDER BY CuisineName;
 
             int insertedCount = 0;
             int updatedCount = 0;
+            int mailSentCount = 0;
+            int mailFailedCount = 0;
             int defaultRoleId = 4;
 
             for (int row = 2; row <= worksheet.Dimension.End.Row; row++)
@@ -429,6 +450,7 @@ ORDER BY CuisineName;
                 if (
                     string.IsNullOrWhiteSpace(userName) &&
                     string.IsNullOrWhiteSpace(email) &&
+                    string.IsNullOrWhiteSpace(password) &&
                     string.IsNullOrWhiteSpace(planTypeText) &&
                     string.IsNullOrWhiteSpace(cuisineNameText)
                 )
@@ -510,6 +532,22 @@ WHERE Id = @Id;";
                     });
 
                     updatedCount++;
+
+                    if (!string.IsNullOrWhiteSpace(password))
+                    {
+                        try
+                        {
+                            string subject = "QrServe Login Credentials Updated";
+                            string body = BuildUserCredentialEmail(userName, email, password);
+
+                            await _emailService.SendEmailAsync(email, subject, body);
+                            mailSentCount++;
+                        }
+                        catch
+                        {
+                            mailFailedCount++;
+                        }
+                    }
                 }
                 else
                 {
@@ -567,10 +605,23 @@ VALUES
                     });
 
                     insertedCount++;
+
+                    try
+                    {
+                        string subject = "QrServe Login Credentials";
+                        string body = BuildUserCredentialEmail(userName, email, password);
+
+                        await _emailService.SendEmailAsync(email, subject, body);
+                        mailSentCount++;
+                    }
+                    catch
+                    {
+                        mailFailedCount++;
+                    }
                 }
             }
 
-            return $"Bulk upload completed successfully. Inserted: {insertedCount}, Updated: {updatedCount}";
+            return $"Bulk upload completed successfully. Inserted: {insertedCount}, Updated: {updatedCount}, Mail Sent: {mailSentCount}, Mail Failed: {mailFailedCount}";
         }
 
 
@@ -586,6 +637,35 @@ where UserMaster.CompanyId = @companyId and UserMaster.IsActive = 1;";
 
             using var con = _context.CreateConnection();
             return await con.QueryAsync<CuisineDto>(sql, new { companyId });
+        }
+
+
+        private static string BuildUserCredentialEmail(string userName, string email, string password)
+        {
+            return $@"
+<div style='font-family:Arial,sans-serif;font-size:14px;color:#333;'>
+    <h2 style='color:#6F3C2F;'>QrServe Login Credentials</h2>
+
+    <p>Dear {userName},</p>
+
+    <p>Your QrServe account has been created successfully.</p>
+
+    <table style='border-collapse:collapse;margin-top:10px;'>
+        <tr>
+            <td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>Email</td>
+            <td style='padding:8px;border:1px solid #ddd;'>{email}</td>
+        </tr>
+        <tr>
+            <td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>Password</td>
+            <td style='padding:8px;border:1px solid #ddd;'>{password}</td>
+        </tr>
+    </table>
+
+    <p style='margin-top:15px;'>Please login and change your password after first login.</p>
+
+    <br/>
+    <p>Thanks,<br/>CSPL QrServe Team</p>
+</div>";
         }
     }
 }

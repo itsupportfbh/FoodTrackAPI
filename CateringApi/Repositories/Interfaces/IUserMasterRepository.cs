@@ -14,7 +14,7 @@ namespace CateringApi.Repositories.Interfaces
         Task DeleteAsync(int id, int updatedBy);
         Task<IEnumerable<RolesDTO>> GetRoles();
 
-        Task<byte[]> DownloadUserTemplateAsync();
+        Task<byte[]> DownloadUserTemplateAsync(int companyId);
         Task<string> BulkUploadUsersAsync(IFormFile file, int updatedBy, int companyId);
 
         Task<IEnumerable<CuisineDto>> GetAllCuisine(int companyId);
