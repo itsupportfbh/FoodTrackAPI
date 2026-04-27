@@ -49,8 +49,8 @@ namespace CateringApi.Repositories.Implementations
                 : "";
 
             var sql = $@"
-IF OBJECT_ID('tempdb..#Final') IS NOT NULL
-    DROP TABLE #Final;
+IF OBJECT_ID('tempdb..#Final') IS NOT NULL DROP TABLE #Final;
+IF OBJECT_ID('tempdb..#PlanPrice') IS NOT NULL DROP TABLE #PlanPrice;
 
 CREATE TABLE #Final
 (
@@ -59,6 +59,12 @@ CREATE TABLE #Final
     CompanyName NVARCHAR(250),
     PlanType NVARCHAR(100),
     Qty DECIMAL(18,2)
+);
+
+CREATE TABLE #PlanPrice
+(
+    PlanType NVARCHAR(100),
+    PerDayRate DECIMAL(18,2)
 );
 
 ;WITH ActiveHeaders AS
@@ -179,6 +185,46 @@ SELECT
 FROM OverrideRows orow
 WHERE orow.Qty > 0;
 
+;WITH LatestHistoryPrice AS
+(
+    SELECT
+        p.PlanType,
+        p.SessionId,
+        p.Rate
+    FROM
+    (
+        SELECT
+            sph.PlanType,
+            sph.SessionId,
+            sph.Rate,
+            ROW_NUMBER() OVER
+            (
+                PARTITION BY sph.PlanType, sph.SessionId
+                ORDER BY sph.EffectiveFrom DESC, sph.Id DESC
+            ) AS rn
+        FROM SessionPriceHistory sph
+        WHERE
+            sph.SessionId IN (1, 2, 3)
+            AND CAST(sph.EffectiveFrom AS DATE) <= @ToDate
+            AND (
+                sph.EffectiveTo IS NULL
+                OR CAST(sph.EffectiveTo AS DATE) >= @FromDate
+            )
+            AND ISNULL(sph.ActionType, '') <> 'DELETE'
+    ) p
+    WHERE p.rn = 1
+)
+INSERT INTO #PlanPrice
+(
+    PlanType,
+    PerDayRate
+)
+SELECT
+    PlanType,
+    SUM(Rate) AS PerDayRate
+FROM LatestHistoryPrice
+GROUP BY PlanType;
+
 SELECT
     COUNT(DISTINCT f.CompanyId) AS TotalCompanies,
     COUNT(DISTINCT f.RequestHeaderId) AS TotalOrders,
@@ -190,18 +236,7 @@ SELECT
     ISNULL(SUM(f.Qty), 0) AS MonthPendingQty,
     ISNULL(SUM(f.Qty * ISNULL(pp.PerDayRate, 0)), 0) AS TotalPrice
 FROM #Final f
-LEFT JOIN
-(
-    SELECT
-        sp.PlanType,
-        SUM(sp.Rate) AS PerDayRate
-    FROM SessionPrice sp
-    WHERE
-        sp.IsActive = 1
-        AND sp.SessionId IN (1, 2, 3)
-        AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
-    GROUP BY sp.PlanType
-) pp
+LEFT JOIN #PlanPrice pp
     ON LTRIM(RTRIM(pp.PlanType)) = LTRIM(RTRIM(f.PlanType));
 
 SELECT
@@ -227,18 +262,7 @@ SELECT
     ISNULL(MAX(pp.PerDayRate), 0) AS Rate,
     ISNULL(SUM(f.Qty * ISNULL(pp.PerDayRate, 0)), 0) AS TotalPrice
 FROM #Final f
-LEFT JOIN
-(
-    SELECT
-        sp.PlanType,
-        SUM(sp.Rate) AS PerDayRate
-    FROM SessionPrice sp
-    WHERE
-        sp.IsActive = 1
-        AND sp.SessionId IN (1, 2, 3)
-        AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
-    GROUP BY sp.PlanType
-) pp
+LEFT JOIN #PlanPrice pp
     ON LTRIM(RTRIM(pp.PlanType)) = LTRIM(RTRIM(f.PlanType))
 GROUP BY f.PlanType
 ORDER BY f.PlanType;
@@ -248,18 +272,7 @@ SELECT
     0 AS SessionId,
     pp.PlanType AS SessionName,
     pp.PerDayRate AS Rate
-FROM
-(
-    SELECT
-        sp.PlanType,
-        SUM(sp.Rate) AS PerDayRate
-    FROM SessionPrice sp
-    WHERE
-        sp.IsActive = 1
-        AND sp.SessionId IN (1, 2, 3)
-        AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
-    GROUP BY sp.PlanType
-) pp
+FROM #PlanPrice pp
 ORDER BY pp.PlanType;
 
 SELECT
@@ -273,6 +286,7 @@ GROUP BY f.CompanyId, f.CompanyName
 ORDER BY TotalQty DESC;
 
 DROP TABLE #Final;
+DROP TABLE #PlanPrice;
 ";
 
             using var multi = await con.QueryMultipleAsync(sql, parameters);
