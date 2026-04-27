@@ -85,5 +85,13 @@ namespace CateringApi.Controllers
             var result = await _userMasterRepository.BulkUploadUsersAsync(file, updatedBy, companyId);
             return Ok(new ResponseResult(true, result, null));
         }
+
+
+        [HttpGet("GetAllCuisine")]
+        public async Task<IActionResult> GetAllCuisine(int companyId)
+        {
+            var obj = await _userMasterRepository.GetAllCuisine(companyId);
+            return Ok(new ResponseResult(true, "Success", obj));
+        }
     }
 }

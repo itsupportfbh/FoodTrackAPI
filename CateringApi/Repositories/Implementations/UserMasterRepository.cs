@@ -1,12 +1,13 @@
-﻿using System.Data;
-using BCrypt.Net;
+﻿using BCrypt.Net;
 using CateringApi.Data;
 using CateringApi.DTOs;
 using CateringApi.DTOs.User;
+using CateringApi.Models;
 using CateringApi.Repositories.Interfaces;
 using Dapper;
 using Microsoft.AspNetCore.Http;
 using OfficeOpenXml;
+using System.Data;
 
 namespace CateringApi.Repositories.Implementations
 {
@@ -296,7 +297,6 @@ WHERE Id = @Id;";
             const string query = @"
 UPDATE UserMaster
 SET
-    IsDelete = 1,
     IsActive = 0,
     UpdatedBy = @UpdatedBy,
     UpdatedDate = @UpdatedDate
@@ -571,6 +571,21 @@ VALUES
             }
 
             return $"Bulk upload completed successfully. Inserted: {insertedCount}, Updated: {updatedCount}";
+        }
+
+
+
+        public async Task<IEnumerable<CuisineDto>> GetAllCuisine(int companyId)
+        {
+            const string sql = @"
+select distinct cm.CuisineName, cm.Id,cm.IsActive from UserMaster
+
+inner join CompanyCuisineMap as ccm on ccm.CompanyId = UserMaster.CompanyId
+inner join CuisineMaster as cm on cm.Id = ccm.CuisineId
+where UserMaster.CompanyId = @companyId and UserMaster.IsActive = 1;";
+
+            using var con = _context.CreateConnection();
+            return await con.QueryAsync<CuisineDto>(sql, new { companyId });
         }
     }
 }
