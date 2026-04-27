@@ -327,13 +327,10 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
 
         public async Task<List<PriceListDto>> GetPriceList()
         {
-            var today = DateTime.Today;
-
             var baseQuery = from p in _context1.SessionPrice
                             join s in _context1.Session on p.SessionId equals s.Id
                             where p.IsActive
                                   && p.CompanyId == 0
-                                  && p.EffectiveFrom.Date <= today
                             select new
                             {
                                 p.Id,
@@ -374,9 +371,9 @@ ORDER BY h.EffectiveFrom DESC, h.Id DESC;";
                     Rate = x.Rate,
                     EffectiveFrom = x.EffectiveFrom,
                     EffectiveTo = null,
-                    ActionType = "DEFAULT",
+                    ActionType = x.EffectiveFrom.Date > DateTime.Today ? "FUTURE" : "DEFAULT",
                     IsActive = true,
-                    IsCurrent = true,
+                    IsCurrent = x.EffectiveFrom.Date <= DateTime.Today,
                     PlanType = x.PlanType
                 })
                 .OrderBy(x => x.PlanType)
