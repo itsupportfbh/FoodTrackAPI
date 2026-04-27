@@ -24,6 +24,7 @@ namespace CateringApi.Repositories.Implementations
         public async Task<DashboardDTO> GetDashboardData(DashboardFilterDTO filter)
         {
             var con = _context.Database.GetDbConnection();
+
             if (con.State != ConnectionState.Open)
                 await con.OpenAsync();
 
@@ -31,156 +32,221 @@ namespace CateringApi.Repositories.Implementations
             var fromDate = filter.FromDate?.Date ?? today;
             var toDate = filter.ToDate?.Date ?? today;
 
+            var companyIds = filter.CompanyIds ?? new List<int>();
+
             var parameters = new DynamicParameters();
             parameters.Add("@FromDate", fromDate);
             parameters.Add("@ToDate", toDate);
             parameters.Add("@Today", today);
+            parameters.Add("@CompanyIds", companyIds);
 
-            var sql = @"
-IF OBJECT_ID('tempdb..#Final') IS NOT NULL DROP TABLE #Final;
+            var companyFilter = companyIds.Any()
+                ? " AND rh.CompanyId IN @CompanyIds "
+                : "";
+
+            var scanCompanyFilter = companyIds.Any()
+                ? " AND qcr.CompanyId IN @CompanyIds "
+                : "";
+
+            var sql = $@"
+IF OBJECT_ID('tempdb..#Final') IS NOT NULL
+    DROP TABLE #Final;
 
 CREATE TABLE #Final
 (
     RequestHeaderId INT,
     CompanyId INT,
-    CompanyName NVARCHAR(200),
+    CompanyName NVARCHAR(250),
     PlanType NVARCHAR(100),
     Qty DECIMAL(18,2)
 );
 
--- ACTIVE HEADERS
-;WITH AH AS
+;WITH ActiveHeaders AS
 (
-    SELECT rh.Id, rh.CompanyId, cm.CompanyName
+    SELECT
+        rh.Id,
+        rh.CompanyId,
+        cm.CompanyName,
+        rh.FromDate,
+        rh.ToDate
     FROM RequestHeader rh
-    LEFT JOIN CompanyMaster cm ON cm.Id = rh.CompanyId
-    WHERE rh.IsActive = 1
+    LEFT JOIN CompanyMaster cm
+        ON cm.Id = rh.CompanyId
+    WHERE
+        rh.IsActive = 1
+        AND rh.FromDate <= @ToDate
+        AND rh.ToDate >= @FromDate
+        {companyFilter}
 ),
-
--- LATEST OVERRIDE ONLY
-LO AS
+LatestOverride AS
 (
-    SELECT *
+    SELECT
+        x.Id,
+        x.RequestHeaderId
     FROM
     (
-        SELECT ro.*,
-               ROW_NUMBER() OVER (PARTITION BY ro.RequestHeaderId ORDER BY ro.Id DESC) rn
+        SELECT
+            ro.Id,
+            ro.RequestHeaderId,
+            ROW_NUMBER() OVER
+            (
+                PARTITION BY ro.RequestHeaderId
+                ORDER BY ro.CreatedDate DESC, ro.Id DESC
+            ) AS rn
         FROM RequestOverride ro
-        WHERE ro.IsActive = 1
+        INNER JOIN ActiveHeaders ah
+            ON ah.Id = ro.RequestHeaderId
+        WHERE
+            ro.IsActive = 1
+            AND ro.FromDate <= @ToDate
+            AND ro.ToDate >= @FromDate
     ) x
-    WHERE rn = 1
+    WHERE x.rn = 1
 ),
-
--- BASE (NO OVERRIDE)
-BASE AS
+BaseRows AS
 (
     SELECT
-        ah.Id,
+        ah.Id AS RequestHeaderId,
         ah.CompanyId,
         ah.CompanyName,
-        rd.PlanType,
-        rd.Qty
-    FROM AH ah
-    INNER JOIN RequestDetail rd ON rd.RequestHeaderId = ah.Id
-    WHERE rd.IsActive = 1
-    AND NOT EXISTS (SELECT 1 FROM LO WHERE RequestHeaderId = ah.Id)
+        ISNULL(NULLIF(LTRIM(RTRIM(rd.PlanType)), ''), 'Basic') AS PlanType,
+        ISNULL(rd.Qty, 0) *
+        (
+            DATEDIFF(
+                DAY,
+                CASE WHEN ah.FromDate < @FromDate THEN @FromDate ELSE ah.FromDate END,
+                CASE WHEN ah.ToDate > @ToDate THEN @ToDate ELSE ah.ToDate END
+            ) + 1
+        ) AS Qty
+    FROM ActiveHeaders ah
+    INNER JOIN RequestDetail rd
+        ON rd.RequestHeaderId = ah.Id
+    WHERE
+        rd.IsActive = 1
+        AND NOT EXISTS
+        (
+            SELECT 1
+            FROM LatestOverride lo
+            WHERE lo.RequestHeaderId = ah.Id
+        )
 ),
-
--- OVERRIDE (FULL RANGE)
-OVR AS
+OverrideRows AS
 (
     SELECT
-        ah.Id,
+        ah.Id AS RequestHeaderId,
         ah.CompanyId,
         ah.CompanyName,
-        rod.PlanType,
-        rod.OverrideQty AS Qty
-    FROM LO ro
-    INNER JOIN RequestOverrideDetail rod ON rod.RequestOverrideId = ro.Id
-    INNER JOIN AH ah ON ah.Id = ro.RequestHeaderId
-    WHERE rod.IsActive = 1 AND ISNULL(rod.IsCancelled,0)=0
+        ISNULL(NULLIF(LTRIM(RTRIM(rod.PlanType)), ''), 'Basic') AS PlanType,
+        ISNULL(rod.OverrideQty, 0) *
+        (
+            DATEDIFF(DAY, @FromDate, @ToDate) + 1
+        ) AS Qty
+    FROM LatestOverride lo
+    INNER JOIN RequestOverrideDetail rod
+        ON rod.RequestOverrideId = lo.Id
+    INNER JOIN ActiveHeaders ah
+        ON ah.Id = lo.RequestHeaderId
+    WHERE
+        rod.IsActive = 1
+        AND ISNULL(rod.IsCancelled, 0) = 0
 )
-
--- FINAL INSERT
 INSERT INTO #Final
-SELECT
-    Id,
+(
+    RequestHeaderId,
     CompanyId,
     CompanyName,
     PlanType,
-    Qty * (DATEDIFF(DAY, @FromDate, @ToDate) + 1)
-FROM
-(
-    SELECT * FROM BASE
-    UNION ALL
-    SELECT * FROM OVR
-) X;
-
---------------------------------------------------
--- SUMMARY
---------------------------------------------------
+    Qty
+)
 SELECT
-    COUNT(DISTINCT CompanyId) AS TotalCompanies,
-    COUNT(DISTINCT RequestHeaderId) AS TotalOrders,
-    SUM(Qty) AS MonthOrderedQty,
-    SUM(Qty) AS MonthPendingQty,
+    br.RequestHeaderId,
+    br.CompanyId,
+    br.CompanyName,
+    br.PlanType,
+    br.Qty
+FROM BaseRows br
+WHERE br.Qty > 0
+
+UNION ALL
+
+SELECT
+    orow.RequestHeaderId,
+    orow.CompanyId,
+    orow.CompanyName,
+    orow.PlanType,
+    orow.Qty
+FROM OverrideRows orow
+WHERE orow.Qty > 0;
+
+SELECT
+    COUNT(DISTINCT f.CompanyId) AS TotalCompanies,
+    COUNT(DISTINCT f.RequestHeaderId) AS TotalOrders,
+    ISNULL(SUM(CASE WHEN @Today BETWEEN @FromDate AND @ToDate THEN f.Qty ELSE 0 END), 0) AS TodayOrderedQty,
+    0 AS TodayRedeemedQty,
+    ISNULL(SUM(CASE WHEN @Today BETWEEN @FromDate AND @ToDate THEN f.Qty ELSE 0 END), 0) AS TodayPendingQty,
+    ISNULL(SUM(f.Qty), 0) AS MonthOrderedQty,
     0 AS MonthRedeemedQty,
-    0 AS TotalPrice
-FROM #Final;
-
---------------------------------------------------
--- PLAN TYPE
---------------------------------------------------
-SELECT PlanType, SUM(Qty) AS TotalQty
-FROM #Final
-GROUP BY PlanType;
-
---------------------------------------------------
--- SESSION (PlanType as session)
---------------------------------------------------
-SELECT 0 AS SessionId, PlanType AS SessionName, SUM(Qty) AS TotalQty
-FROM #Final
-GROUP BY PlanType;
-
---------------------------------------------------
--- PRICE BREAKDOWN
---------------------------------------------------
-SELECT
-    f.PlanType,
-    0 AS SessionId,
-    f.PlanType AS SessionName,
-    SUM(f.Qty) AS Qty,
-    ISNULL(MAX(sp.Rate),0) AS Rate,
-    SUM(f.Qty * ISNULL(sp.Rate,0)) AS TotalPrice
+    ISNULL(SUM(f.Qty), 0) AS MonthPendingQty,
+    ISNULL(SUM(f.Qty * ISNULL(sp.Rate, 0)), 0) AS TotalPrice
 FROM #Final f
 LEFT JOIN SessionPrice sp
     ON LTRIM(RTRIM(sp.PlanType)) = LTRIM(RTRIM(f.PlanType))
     AND sp.IsActive = 1
     AND sp.SessionId = 1
-GROUP BY f.PlanType;
+    AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate;
 
---------------------------------------------------
--- CURRENT PRICES
---------------------------------------------------
+SELECT
+    f.PlanType,
+    ISNULL(SUM(f.Qty), 0) AS TotalQty
+FROM #Final f
+GROUP BY f.PlanType
+ORDER BY f.PlanType;
+
+SELECT
+    0 AS SessionId,
+    f.PlanType AS SessionName,
+    ISNULL(SUM(f.Qty), 0) AS TotalQty
+FROM #Final f
+GROUP BY f.PlanType
+ORDER BY f.PlanType;
+
+SELECT
+    f.PlanType,
+    0 AS SessionId,
+    f.PlanType AS SessionName,
+    ISNULL(SUM(f.Qty), 0) AS Qty,
+    ISNULL(MAX(sp.Rate), 0) AS Rate,
+    ISNULL(SUM(f.Qty * ISNULL(sp.Rate, 0)), 0) AS TotalPrice
+FROM #Final f
+LEFT JOIN SessionPrice sp
+    ON LTRIM(RTRIM(sp.PlanType)) = LTRIM(RTRIM(f.PlanType))
+    AND sp.IsActive = 1
+    AND sp.SessionId = 1
+    AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
+GROUP BY f.PlanType
+ORDER BY f.PlanType;
+
 SELECT
     sp.PlanType,
     0 AS SessionId,
     sp.PlanType AS SessionName,
     sp.Rate
 FROM SessionPrice sp
-WHERE sp.IsActive = 1 AND sp.SessionId = 1;
+WHERE
+    sp.IsActive = 1
+    AND sp.SessionId = 1
+    AND CAST(sp.EffectiveFrom AS DATE) <= @ToDate
+ORDER BY sp.PlanType;
 
---------------------------------------------------
--- COMPANY
---------------------------------------------------
 SELECT
-    CompanyId,
-    CompanyName,
-    SUM(Qty) AS TotalQty,
+    f.CompanyId,
+    ISNULL(f.CompanyName, 'Unknown Company') AS CompanyName,
+    ISNULL(SUM(f.Qty), 0) AS TotalQty,
     0 AS RedeemQty,
-    SUM(Qty) AS PendingQty
-FROM #Final
-GROUP BY CompanyId, CompanyName;
+    ISNULL(SUM(f.Qty), 0) AS PendingQty
+FROM #Final f
+GROUP BY f.CompanyId, f.CompanyName
+ORDER BY TotalQty DESC;
 
 DROP TABLE #Final;
 ";
@@ -204,27 +270,87 @@ DROP TABLE #Final;
             summary.TotalcompanyWiseOrders =
                 (await multi.ReadAsync<CompanyWiseOrderDTO>()).ToList();
 
-            // ✔ FIX TOTAL PRICE
             summary.TotalPrice = summary.SessionPriceBreakdown.Sum(x => x.TotalPrice);
 
-            // ✔ SCANS
-            summary.TodayScans = await con.ExecuteScalarAsync<int>(@"
-SELECT COUNT(*) FROM QrScanLog
-WHERE CAST(ScanDate AS DATE) = @Today AND ISNULL(IsAllowed,0)=1", parameters);
+            summary.TodayScans = await con.ExecuteScalarAsync<int>($@"
+SELECT COUNT(1)
+FROM QrScanLog qsl
+LEFT JOIN QrCodeRequest qcr
+    ON qcr.Id = qsl.QrCodeRequestId
+WHERE
+    ISNULL(qsl.IsAllowed, 0) = 1
+    AND CAST(qsl.ScanDate AS DATE) = @Today
+    {scanCompanyFilter};
+", parameters);
+
+            summary.YesterdayScans = await con.ExecuteScalarAsync<int>($@"
+SELECT COUNT(1)
+FROM QrScanLog qsl
+LEFT JOIN QrCodeRequest qcr
+    ON qcr.Id = qsl.QrCodeRequestId
+WHERE
+    ISNULL(qsl.IsAllowed, 0) = 1
+    AND CAST(qsl.ScanDate AS DATE) = DATEADD(DAY, -1, @Today)
+    {scanCompanyFilter};
+", parameters);
+
+            summary.MonthRedeemedQty = await con.ExecuteScalarAsync<int>($@"
+SELECT COUNT(1)
+FROM QrScanLog qsl
+LEFT JOIN QrCodeRequest qcr
+    ON qcr.Id = qsl.QrCodeRequestId
+WHERE
+    ISNULL(qsl.IsAllowed, 0) = 1
+    AND CAST(qsl.ScanDate AS DATE) BETWEEN @FromDate AND @ToDate
+    {scanCompanyFilter};
+", parameters);
 
             summary.TodayRedeemedQty = summary.TodayScans;
-            summary.TodayPendingQty = summary.TodayOrderedQty - summary.TodayRedeemedQty;
+            summary.MonthPendingQty = Math.Max(0, summary.MonthOrderedQty - summary.MonthRedeemedQty);
+            summary.TodayPendingQty = Math.Max(0, summary.TodayOrderedQty - summary.TodayRedeemedQty);
 
-            // ✔ OVERRIDE FLAG
-            summary.IsOverrideApplied = await con.ExecuteScalarAsync<bool>(@"
-SELECT CASE WHEN EXISTS(SELECT 1 FROM RequestOverride WHERE IsActive=1)
-THEN 1 ELSE 0 END");
+            foreach (var company in summary.TotalcompanyWiseOrders)
+            {
+                company.RedeemQty = await con.ExecuteScalarAsync<int>(@"
+SELECT COUNT(1)
+FROM QrScanLog qsl
+LEFT JOIN QrCodeRequest qcr
+    ON qcr.Id = qsl.QrCodeRequestId
+WHERE
+    ISNULL(qsl.IsAllowed, 0) = 1
+    AND qcr.CompanyId = @CompanyId
+    AND CAST(qsl.ScanDate AS DATE) BETWEEN @FromDate AND @ToDate;
+", new
+                {
+                    CompanyId = company.CompanyId,
+                    FromDate = fromDate,
+                    ToDate = toDate
+                });
 
-            summary.TotalQRCodes = (int)summary.MonthOrderedQty;
+                company.PendingQty = Math.Max(0, company.TotalQty - company.RedeemQty);
+            }
+
+            summary.IsOverrideApplied = await con.ExecuteScalarAsync<bool>($@"
+SELECT CASE WHEN EXISTS
+(
+    SELECT 1
+    FROM RequestOverride ro
+    INNER JOIN RequestHeader rh
+        ON rh.Id = ro.RequestHeaderId
+    WHERE
+        ro.IsActive = 1
+        AND rh.IsActive = 1
+        AND ro.FromDate <= @ToDate
+        AND ro.ToDate >= @FromDate
+        {companyFilter}
+)
+THEN CAST(1 AS BIT) ELSE CAST(0 AS BIT) END;
+", parameters);
+
+            summary.TotalQRCodes = Convert.ToInt32(summary.MonthOrderedQty);
 
             return summary;
         }
-
         private class DashboardEffectiveRow
         {
             public int RequestDetailId { get; set; }
