@@ -1,5 +1,6 @@
 ﻿using CateringApi.DTOs;
 using CateringApi.DTOs.User;
+using CateringApi.Models;
 using Microsoft.AspNetCore.Http;
 
 namespace CateringApi.Repositories.Interfaces
@@ -15,5 +16,7 @@ namespace CateringApi.Repositories.Interfaces
 
         Task<byte[]> DownloadUserTemplateAsync();
         Task<string> BulkUploadUsersAsync(IFormFile file, int updatedBy, int companyId);
+
+        Task<IEnumerable<CuisineDto>> GetAllCuisine(int companyId);
     }
 }
