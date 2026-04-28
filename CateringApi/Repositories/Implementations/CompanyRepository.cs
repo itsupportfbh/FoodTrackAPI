@@ -2,6 +2,7 @@
 using CateringApi.Data;
 using CateringApi.DTOs.Company;
 using CateringApi.Repositories.Interfaces;
+using CateringApi.Services;
 using Dapper;
 using System.Data;
 
@@ -10,10 +11,12 @@ namespace CateringApi.Repositories.Implementations
     public class CompanyRepository : ICompanyRepository
     {
         private readonly DapperContext _context;
+        private readonly IEmailService _emailService;
 
-        public CompanyRepository(DapperContext context)
+        public CompanyRepository(DapperContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         public async Task<IEnumerable<CompanyMaster>> GetAllAsync()
@@ -102,18 +105,25 @@ WHERE Id = @Id;";
         public async Task<int> SaveAsync(CompanySaveDto dto)
         {
             using var con = _context.CreateConnection();
+
             if (con.State != ConnectionState.Open)
                 con.Open();
 
             using var tx = con.BeginTransaction();
 
+            string? mailTo = null;
+            string? mailUserName = null;
+            string? plainPasswordForMail = null;
+            bool shouldSendMail = false;
+
             try
             {
                 var existingCompanyCode = await con.ExecuteScalarAsync<int>(
-                    @"SELECT COUNT(1)
-                  FROM dbo.CompanyMaster
-                  WHERE CompanyCode = @CompanyCode
-                    AND (@Id IS NULL OR Id <> @Id);",
+                    @"
+SELECT COUNT(1)
+FROM dbo.CompanyMaster
+WHERE CompanyCode = @CompanyCode
+AND (@Id IS NULL OR Id <> @Id);",
                     new { dto.CompanyCode, dto.Id },
                     tx);
 
@@ -121,10 +131,11 @@ WHERE Id = @Id;";
                     throw new Exception("Company code already exists.");
 
                 var existingCompanyEmail = await con.ExecuteScalarAsync<int>(
-                    @"SELECT COUNT(1)
-                  FROM dbo.CompanyMaster
-                  WHERE Email = @Email
-                    AND (@Id IS NULL OR Id <> @Id);",
+                    @"
+SELECT COUNT(1)
+FROM dbo.CompanyMaster
+WHERE Email = @Email
+AND (@Id IS NULL OR Id <> @Id);",
                     new { dto.Email, dto.Id },
                     tx);
 
@@ -165,11 +176,11 @@ SET
     UpdatedBy   = @UserId,
     UpdatedDate = GETDATE()
 WHERE CompanyId = @CompanyId
-  AND RoleId = (
-        SELECT TOP 1 Id
-        FROM dbo.RoleMaster
-        WHERE RoleCode = 'ADMIN'
-    );";
+AND RoleId = (
+    SELECT TOP 1 Id
+    FROM dbo.RoleMaster
+    WHERE RoleCode = 'ADMIN'
+);";
 
                     await con.ExecuteAsync(updateUserSql, new
                     {
@@ -181,7 +192,7 @@ WHERE CompanyId = @CompanyId
 
                     if (!string.IsNullOrWhiteSpace(dto.Password))
                     {
-                        var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
+                        var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password.Trim());
 
                         const string updatePasswordSql = @"
 UPDATE dbo.UserMaster
@@ -190,11 +201,11 @@ SET
     UpdatedBy    = @UserId,
     UpdatedDate  = GETDATE()
 WHERE CompanyId = @CompanyId
-  AND RoleId = (
-        SELECT TOP 1 Id
-        FROM dbo.RoleMaster
-        WHERE RoleCode = 'ADMIN'
-    );";
+AND RoleId = (
+    SELECT TOP 1 Id
+    FROM dbo.RoleMaster
+    WHERE RoleCode = 'ADMIN'
+);";
 
                         await con.ExecuteAsync(updatePasswordSql, new
                         {
@@ -202,6 +213,11 @@ WHERE CompanyId = @CompanyId
                             dto.UserId,
                             CompanyId = companyId
                         }, tx);
+
+                        mailTo = dto.Email;
+                        mailUserName = dto.ContactPerson;
+                        plainPasswordForMail = dto.Password.Trim();
+                        shouldSendMail = true;
                     }
                 }
                 else
@@ -210,9 +226,10 @@ WHERE CompanyId = @CompanyId
                         throw new Exception("Password is required for new company.");
 
                     var existingUsername = await con.ExecuteScalarAsync<int>(
-                        @"SELECT COUNT(1)
-                      FROM dbo.UserMaster
-                      WHERE Username = @Email OR Email = @Email;",
+                        @"
+SELECT COUNT(1)
+FROM dbo.UserMaster
+WHERE Username = @Email OR Email = @Email;",
                         new { dto.Email },
                         tx);
 
@@ -220,9 +237,10 @@ WHERE CompanyId = @CompanyId
                         throw new Exception("Login email already exists.");
 
                     var adminRoleId = await con.ExecuteScalarAsync<int?>(
-                        @"SELECT TOP 1 Id
-                      FROM dbo.RoleMaster
-                      WHERE RoleCode = 'ADMIN' AND IsActive = 1;",
+                        @"
+SELECT TOP 1 Id
+FROM dbo.RoleMaster
+WHERE RoleCode = 'ADMIN' AND IsActive = 1;",
                         transaction: tx);
 
                     if (!adminRoleId.HasValue)
@@ -266,13 +284,12 @@ SELECT CAST(SCOPE_IDENTITY() AS INT);";
 
                     companyId = await con.ExecuteScalarAsync<int>(insertCompanySql, dto, tx);
 
-                    var passwordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password);
-
-
+                    string plainPassword = dto.Password.Trim();
+                    var passwordHash = BCrypt.Net.BCrypt.HashPassword(plainPassword);
 
                     var firstCuisineId = dto.CuisineIds != null && dto.CuisineIds.Any()
-        ? dto.CuisineIds.First()
-        : 0;
+                        ? dto.CuisineIds.First()
+                        : 0;
 
                     const string insertUserSql = @"
 INSERT INTO dbo.UserMaster
@@ -286,7 +303,8 @@ INSERT INTO dbo.UserMaster
     CreatedBy,
     CreatedDate,
     PlanType,
-    CuisineId
+    CuisineId,
+    IsDelete
 )
 VALUES
 (
@@ -299,7 +317,8 @@ VALUES
     @CreatedBy,
     GETDATE(),
     'Basic',
-    @CuisineId
+    @CuisineId,
+    0
 );";
 
                     await con.ExecuteAsync(insertUserSql, new
@@ -312,11 +331,29 @@ VALUES
                         CreatedBy = dto.UserId,
                         CuisineId = firstCuisineId
                     }, tx);
+
+                    mailTo = dto.Email;
+                    mailUserName = dto.ContactPerson;
+                    plainPasswordForMail = plainPassword;
+                    shouldSendMail = true;
                 }
 
                 await SaveCompanyMappingsAsync(con, tx, dto, companyId);
 
                 tx.Commit();
+
+                if (shouldSendMail && !string.IsNullOrWhiteSpace(mailTo))
+                {
+                    string subject = "QrServe Login Credentials";
+                    string body = BuildUserCredentialEmail(
+                        mailUserName ?? "",
+                        mailTo,
+                        plainPasswordForMail ?? ""
+                    );
+
+                    await _emailService.SendEmailAsync(mailTo, subject, body);
+                }
+
                 return companyId;
             }
             catch
@@ -326,7 +363,36 @@ VALUES
             }
         }
 
-      
+
+        private static string BuildUserCredentialEmail(string userName, string email, string password)
+        {
+            return $@"
+<div style='font-family:Arial,sans-serif;font-size:14px;color:#333;'>
+    <h2 style='color:#6F3C2F;'>QrServe Login Credentials</h2>
+
+    <p>Dear {userName},</p>
+
+    <p>Your QrServe admin account has been created successfully.</p>
+
+    <table style='border-collapse:collapse;margin-top:10px;'>
+        <tr>
+            <td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>Email</td>
+            <td style='padding:8px;border:1px solid #ddd;'>{email}</td>
+        </tr>
+        <tr>
+            <td style='padding:8px;border:1px solid #ddd;font-weight:bold;'>Password</td>
+            <td style='padding:8px;border:1px solid #ddd;'>{password}</td>
+        </tr>
+    </table>
+
+    <p style='margin-top:15px;'>Please login and change your password after first login.</p>
+
+    <br/>
+    <p>Thanks,<br/>CSPL QrServe Team</p>
+</div>";
+        }
+
+
         public async Task<bool> DeleteAsync(int id, int? userId)
         {
             using var con = _context.CreateConnection();

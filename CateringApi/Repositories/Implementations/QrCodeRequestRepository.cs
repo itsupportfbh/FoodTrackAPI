@@ -736,7 +736,8 @@ namespace CateringApi.Repositories.Implementations
                     Credentials = new NetworkCredential(_smtpSettings.SmtpUser, _smtpSettings.SmtpPass),
                     EnableSsl = true,
                     UseDefaultCredentials = false,
-                    DeliveryMethod = SmtpDeliveryMethod.Network
+                    DeliveryMethod = SmtpDeliveryMethod.Network,
+                    Timeout = 30000 // 30 seconds (IMPORTANT)
                 };
 
                 await smtp.SendMailAsync(message);
@@ -1160,7 +1161,15 @@ namespace CateringApi.Repositories.Implementations
 
                 _context.QrCodeRequest.Add(entity);
                 await _context.SaveChangesAsync();
-                await SendQrApprovalRaisedMailToSuperAdminAsync(entity.Id);
+
+                try
+                {
+                    await SendQrApprovalRaisedMailToSuperAdminAsync(entity.Id);
+                }
+                catch
+                {
+                    // SMTP fail/hang aanaalum QR request save success ah return aagum.
+                }
 
                 return new ApiResponseDto
                 {
@@ -1703,7 +1712,9 @@ namespace CateringApi.Repositories.Implementations
             {
                 Credentials = new NetworkCredential(_smtpSettings.SmtpUser, _smtpSettings.SmtpPass),
                 EnableSsl = true,
-                UseDefaultCredentials = false
+                UseDefaultCredentials = false,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                Timeout = 30000
             };
 
             await smtp.SendMailAsync(message);
