@@ -104,7 +104,7 @@ LatestOverride AS
             ro.ToDate,
             ROW_NUMBER() OVER
             (
-                PARTITION BY ro.RequestHeaderId
+                PARTITION BY ro.RequestHeaderId, ro.FromDate, ro.ToDate
                 ORDER BY ro.CreatedDate DESC, ro.Id DESC
             ) AS rn
         FROM RequestOverride ro
@@ -136,8 +136,10 @@ BasePerDay AS
         AND NOT EXISTS
         (
             SELECT 1
-            FROM LatestOverride lo
-            WHERE lo.RequestHeaderId = ah.Id
+            FROM RequestOverride ro
+            WHERE ro.IsActive = 1
+              AND ro.RequestHeaderId = ah.Id
+              AND dr.OrderDate BETWEEN ro.FromDate AND ro.ToDate
         )
 ),
 OverridePerDay AS
@@ -155,7 +157,7 @@ OverridePerDay AS
     INNER JOIN RequestOverrideDetail rod
         ON rod.RequestOverrideId = lo.Id
     INNER JOIN DateRange dr
-        ON dr.OrderDate BETWEEN @FromDate AND @ToDate
+        ON dr.OrderDate BETWEEN lo.FromDate AND lo.ToDate
     WHERE
         rod.IsActive = 1
         AND ISNULL(rod.IsCancelled, 0) = 0
