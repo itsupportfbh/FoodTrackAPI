@@ -134,12 +134,34 @@ namespace CateringApi.Controllers
         [HttpPost("submit-qr-approval")]
         public async Task<IActionResult> SubmitQrApproval([FromBody] QrCodeRequestModel model)
         {
-            var result = await _qrCodeRequestRepository.SubmitQrApprovalRequestAsync(model);
+            try
+            {
+                if (model == null)
+                {
+                    return BadRequest(new ApiResponseDto
+                    {
+                        IsSuccess = false,
+                        Message = "Invalid request data.",
+                        MessageType = "error"
+                    });
+                }
 
-            if (!result.IsSuccess)
-                return BadRequest(result);
+                var result = await _qrCodeRequestRepository.SubmitQrApprovalRequestAsync(model);
 
-            return Ok(result);
+                if (!result.IsSuccess)
+                    return BadRequest(result);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new ApiResponseDto
+                {
+                    IsSuccess = false,
+                    Message = ex.Message,
+                    MessageType = "error"
+                });
+            }
         }
 
         [HttpPost("approve-qr-request/{id}")]
