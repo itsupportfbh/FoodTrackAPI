@@ -280,6 +280,7 @@ OUTER APPLY
         WHERE sp.PlanType = umr.PlanType
           AND sp.CompanyId = 0
           AND sp.IsActive = 1
+          AND sp.SessionId IN (1, 2, 4)
           AND CAST(sp.EffectiveFrom AS DATE) <= umr.ReportDate
           AND NOT EXISTS
           (
@@ -299,6 +300,7 @@ OUTER APPLY
         FROM dbo.SessionPriceHistory h
         WHERE h.PlanType = umr.PlanType
           AND h.CompanyId = 0
+          AND h.SessionId IN (1, 2, 4)
           AND CAST(umr.ReportDate AS DATE)
               BETWEEN CAST(h.EffectiveFrom AS DATE)
               AND CAST(ISNULL(h.EffectiveTo, '9999-12-31') AS DATE)
@@ -415,6 +417,7 @@ DetailedData AS
             WHERE sp.PlanType = umr.PlanType
               AND sp.CompanyId = 0
               AND sp.IsActive = 1
+              AND sp.SessionId IN (1, 2, 4)
               AND CAST(sp.EffectiveFrom AS DATE) <= umr.ReportDate
               AND NOT EXISTS
               (
@@ -434,6 +437,7 @@ DetailedData AS
             FROM dbo.SessionPriceHistory h
             WHERE h.PlanType = umr.PlanType
               AND h.CompanyId = 0
+              AND h.SessionId IN (1, 2, 4)
               AND CAST(umr.ReportDate AS DATE)
                   BETWEEN CAST(h.EffectiveFrom AS DATE)
                   AND CAST(ISNULL(h.EffectiveTo, '9999-12-31') AS DATE)
