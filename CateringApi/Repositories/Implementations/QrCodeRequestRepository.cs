@@ -1162,19 +1162,22 @@ namespace CateringApi.Repositories.Implementations
                 _context.QrCodeRequest.Add(entity);
                 await _context.SaveChangesAsync();
 
+                string mailStatus = "";
+
                 try
                 {
                     await SendQrApprovalRaisedMailToSuperAdminAsync(entity.Id);
+                    mailStatus = " Mail sent successfully.";
                 }
                 catch (Exception mailEx)
                 {
-                    Console.WriteLine("QR approval mail failed: " + mailEx.Message);
+                    mailStatus = " Mail failed: " + mailEx.Message;
                 }
 
                 return new ApiResponseDto
                 {
                     IsSuccess = true,
-                    Message = "QR request submitted for approval successfully.",
+                    Message = "QR request submitted for approval successfully." + mailStatus,
                     MessageType = "success",
                     Data = entity.Id
                 };
@@ -1623,8 +1626,6 @@ namespace CateringApi.Repositories.Implementations
                 select new
                 {
                     QrCodeRequestId = qr.Id,
-                    qr.RequestId,
-                    qr.CompanyId,
                     CompanyName = cm.CompanyName,
                     rh.FromDate,
                     rh.ToDate,
@@ -1653,79 +1654,46 @@ namespace CateringApi.Repositories.Implementations
 
             var body = $@"
 <html>
-<body style='font-family:Arial;background:#f6f6f6;padding:20px;'>
-    <div style='max-width:650px;margin:auto;background:#fff;border-radius:12px;padding:24px;'>
-        <h2 style='color:#6F3C2F;margin-top:0;'>New QR Approval Request Raised</h2>
-
-        <p>A new QR approval request has been raised.</p>
-
-        <table style='width:100%;border-collapse:collapse;margin-bottom:20px;'>
-            <tr>
-                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Company</td>
-                <td style='padding:10px;border:1px solid #ddd;'>{request.CompanyName}</td>
-            </tr>
-            <tr>
-                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Order Date Range</td>
-                <td style='padding:10px;border:1px solid #ddd;'>
-                    {request.FromDate:dd-MMM-yyyy} to {request.ToDate:dd-MMM-yyyy}
-                </td>
-            </tr>
-            <tr>
-                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>QR Valid Date</td>
-                <td style='padding:10px;border:1px solid #ddd;'>
-                    {request.QRValidFrom:dd-MMM-yyyy} to {request.QRValidTill:dd-MMM-yyyy}
-                </td>
-            </tr>
-            <tr>
-                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Plan Type</td>
-                <td style='padding:10px;border:1px solid #ddd;'>{request.PlanType}</td>
-            </tr>
-            <tr>
-                <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Total Qty</td>
-                <td style='padding:10px;border:1px solid #ddd;'>{request.NoofQR}</td>
-            </tr>
-        </table>
-
-        <p style='margin-top:20px;color:#666;font-size:13px;'>
-            This is an automated notification from FoodTrack.
-        </p>
-    </div>
+<body>
+    <h3>New QR Approval Request</h3>
+    <p>Company: {request.CompanyName}</p>
+    <p>Order: {request.FromDate:dd-MM-yyyy} to {request.ToDate:dd-MM-yyyy}</p>
+    <p>QR Valid: {request.QRValidFrom:dd-MM-yyyy} to {request.QRValidTill:dd-MM-yyyy}</p>
+    <p>Plan: {request.PlanType}</p>
+    <p>Qty: {request.NoofQR}</p>
 </body>
 </html>";
-
-            using var message = new MailMessage
-            {
-                From = new MailAddress(_smtpSettings.From),
-                Subject = $"New QR Approval Request - {request.QrCodeRequestId} - {request.PlanType}",
-                Body = body,
-                IsBodyHtml = true
-            };
-
-            foreach (var email in superAdminEmails)
-            {
-                message.To.Add(email);
-            }
 
             using var smtp = new SmtpClient(_smtpSettings.SmtpHost, _smtpSettings.SmtpPort)
             {
                 Credentials = new NetworkCredential(_smtpSettings.SmtpUser, _smtpSettings.SmtpPass),
                 EnableSsl = true,
                 UseDefaultCredentials = false,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                Timeout = 10000
+                Timeout = 5000
             };
 
-            var sendTask = smtp.SendMailAsync(message);
-            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
-
-            var completedTask = await Task.WhenAny(sendTask, timeoutTask);
-
-            if (completedTask == timeoutTask)
+            // 🔥 IMPORTANT: send ONE BY ONE
+            foreach (var email in superAdminEmails)
             {
-                throw new TimeoutException("SMTP timeout. Server SMTP port/firewall/auth issue.");
-            }
+                try
+                {
+                    using var message = new MailMessage
+                    {
+                        From = new MailAddress(_smtpSettings.From),
+                        Subject = $"QR Approval Request - {request.QrCodeRequestId}",
+                        Body = body,
+                        IsBodyHtml = true
+                    };
 
-            await sendTask;
+                    message.To.Add(email);
+
+                    await smtp.SendMailAsync(message);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Mail failed for {email}: {ex.Message}");
+                }
+            }
         }
 
 
