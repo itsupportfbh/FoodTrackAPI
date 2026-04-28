@@ -1166,9 +1166,9 @@ namespace CateringApi.Repositories.Implementations
                 {
                     await SendQrApprovalRaisedMailToSuperAdminAsync(entity.Id);
                 }
-                catch
+                catch (Exception mailEx)
                 {
-                    // SMTP fail/hang aanaalum QR request save success ah return aagum.
+                    Console.WriteLine("QR approval mail failed: " + mailEx.Message);
                 }
 
                 return new ApiResponseDto
@@ -1624,7 +1624,6 @@ namespace CateringApi.Repositories.Implementations
                 {
                     QrCodeRequestId = qr.Id,
                     qr.RequestId,
-                   
                     qr.CompanyId,
                     CompanyName = cm.CompanyName,
                     rh.FromDate,
@@ -1665,7 +1664,6 @@ namespace CateringApi.Repositories.Implementations
                 <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Company</td>
                 <td style='padding:10px;border:1px solid #ddd;'>{request.CompanyName}</td>
             </tr>
-           
             <tr>
                 <td style='padding:10px;border:1px solid #ddd;font-weight:bold;'>Order Date Range</td>
                 <td style='padding:10px;border:1px solid #ddd;'>
@@ -1714,10 +1712,20 @@ namespace CateringApi.Repositories.Implementations
                 EnableSsl = true,
                 UseDefaultCredentials = false,
                 DeliveryMethod = SmtpDeliveryMethod.Network,
-                Timeout = 30000
+                Timeout = 10000
             };
 
-            await smtp.SendMailAsync(message);
+            var sendTask = smtp.SendMailAsync(message);
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(10));
+
+            var completedTask = await Task.WhenAny(sendTask, timeoutTask);
+
+            if (completedTask == timeoutTask)
+            {
+                throw new TimeoutException("SMTP timeout. Server SMTP port/firewall/auth issue.");
+            }
+
+            await sendTask;
         }
 
 
