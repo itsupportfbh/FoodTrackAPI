@@ -1744,5 +1744,16 @@ namespace CateringApi.Repositories.Implementations
 
             return data;
         }
+        public async Task<string> BackupLastMonthQrDataAsync()
+        {
+            using var connection = new SqlConnection(_configuration.GetConnectionString("DefaultConnection"));
+
+            await connection.ExecuteAsync(
+                "sp_Backup_QRCodeRequest_QRImage_LastMonth",
+                commandType: CommandType.StoredProcedure
+            );
+
+            return "Backup completed successfully.";
+        }
     }
 }

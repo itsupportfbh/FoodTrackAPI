@@ -40,5 +40,6 @@ namespace CateringApi.Repositories.Interfaces
 
 
         Task<List<LockedPlanTypeDto>> GetLockedPlanTypesAsync(int requestId);
+        Task<string> BackupLastMonthQrDataAsync();
     }
 }
