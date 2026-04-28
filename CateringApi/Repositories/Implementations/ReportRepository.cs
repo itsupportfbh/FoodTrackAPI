@@ -579,6 +579,12 @@ OPTION (MAXRECURSION 366);";
             string sessionText = "All sessions";
             string cuisineText = "All cuisines";
             string locationText = "All locations";
+            string planTypeText = "All plan types";
+
+            if (model.PlanTypes != null && model.PlanTypes.Any())
+            {
+                planTypeText = string.Join(", ", model.PlanTypes);
+            }
 
             if (model.CompanyIds != null && model.CompanyIds.Any())
             {
@@ -681,7 +687,7 @@ OPTION (MAXRECURSION 366);";
 
             ws.Cells[row, 1].Value = "Plan Type:";
             ws.Cells[row, 1].Style.Font.Bold = true;
-            ws.Cells[row, 2].Value = "All plan types";
+            ws.Cells[row, 2].Value = planTypeText;
 
             ws.Cells[row, 3].Value = "Cuisine:";
             ws.Cells[row, 3].Style.Font.Bold = true;
@@ -774,7 +780,7 @@ OPTION (MAXRECURSION 366);";
                 }
 
                 ws.Cells[row, 1, row, 4].Merge = true;
-                ws.Cells[row, 1].Value = "Total Count";
+                ws.Cells[row, 1].Value = "Grand Total";
                 ws.Cells[row, 1].Style.Font.Bold = true;
                 ws.Cells[row, 1].Style.HorizontalAlignment =
                     OfficeOpenXml.Style.ExcelHorizontalAlignment.Right;
@@ -783,7 +789,7 @@ OPTION (MAXRECURSION 366);";
                 ws.Cells[row, 5].Style.Font.Bold = true;
 
                 ws.Cells[row, 6].Value = grandTotalAmount;
-                ws.Cells[row, 6].Style.Numberformat.Format = "#,##0.00";
+                ws.Cells[row, 6].Style.Numberformat.Format = "\"S$\" #,##0.00";
                 ws.Cells[row, 6].Style.Font.Bold = true;
             }
             else
@@ -806,6 +812,7 @@ OPTION (MAXRECURSION 366);";
                 row++;
 
                 decimal grandTotalAmount = 0;
+                decimal grandTotalCount = 0;
 
                 foreach (var item in rows)
                 {
@@ -822,15 +829,27 @@ OPTION (MAXRECURSION 366);";
                     ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
 
                     grandTotalAmount += Convert.ToDecimal(item.TotalAmount);
+                    grandTotalCount += Convert.ToDecimal(item.Count);
                     row++;
                 }
 
-                ws.Cells[row, 1, row, 7].Merge = true;
-                ws.Cells[row, 1].Value = "Grand Total (S$)";
+                // Total Count
+                ws.Cells[row, 1, row, 5].Merge = true;
+                ws.Cells[row, 1].Value = "Total Count";
                 ws.Cells[row, 1].Style.Font.Bold = true;
                 ws.Cells[row, 1].Style.HorizontalAlignment =
                     OfficeOpenXml.Style.ExcelHorizontalAlignment.Right;
 
+                ws.Cells[row, 6].Value = grandTotalCount;
+                ws.Cells[row, 6].Style.Font.Bold = true;
+
+                // Grand Total Amount label under RATE column
+                ws.Cells[row, 7].Value = "Grand Total (S$)";
+                ws.Cells[row, 7].Style.Font.Bold = true;
+                ws.Cells[row, 7].Style.HorizontalAlignment =
+                    OfficeOpenXml.Style.ExcelHorizontalAlignment.Right;
+
+                // Amount under TOTAL column
                 ws.Cells[row, 8].Value = grandTotalAmount;
                 ws.Cells[row, 8].Style.Numberformat.Format = "#,##0.00";
                 ws.Cells[row, 8].Style.Font.Bold = true;
