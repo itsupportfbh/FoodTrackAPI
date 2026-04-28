@@ -216,5 +216,17 @@ namespace CateringApi.Controllers
                 data = data
             });
         }
+        [HttpPost("BackupLastMonthQrData")]
+        public async Task<IActionResult> BackupLastMonthQrData()
+        {
+            var result = await _qrCodeRequestRepository.BackupLastMonthQrDataAsync();
+            return Ok(new
+            {
+                messageType = "success",
+                message = result
+            });
+        }
+
+
     }
 }
