@@ -10,5 +10,7 @@ namespace CateringApi.Repositories.Interfaces
         Task<object> DeleteMealRequest(int id);
 
         Task<IEnumerable<ShowQrDTO>> ShowQr(int companyId, int userId);
+
+        Task<MealRequestEligibilityDto> CheckMealRequestEligibility(int companyId, int userId);
     }
 }

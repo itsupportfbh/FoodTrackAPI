@@ -80,5 +80,19 @@ namespace CateringApi.Controllers
                 data
             });
         }
+
+
+        [HttpGet("CheckMealRequestEligibility")]
+        public async Task<IActionResult> CheckMealRequestEligibility(int companyId, int userId)
+        {
+            var data = await _repository.CheckMealRequestEligibility(companyId, userId);
+
+            return Ok(new
+            {
+                status = data.IsAllowed,
+                message = data.Message,
+                data
+            });
+        }
     }
 }
