@@ -293,5 +293,44 @@ WHERE qua.CompanyId = @CompanyId
                 UserId = userId
             });
         }
+
+
+
+        public async Task<MealRequestEligibilityDto> CheckMealRequestEligibility(int companyId, int userId)
+        {
+            using var connection = CreateConnection();
+
+            var sql = @"
+        SELECT
+            CAST(1 AS BIT) AS IsAllowed,
+            'Order found. You can select meal location.' AS Message,
+            MIN(CAST(rh.FromDate AS DATE)) AS MinFromDate,
+            MAX(CAST(rh.ToDate AS DATE)) AS MaxToDate
+        FROM QrUserAssignment qua
+        INNER JOIN RequestHeader rh ON rh.Id = qua.RequestId
+        WHERE qua.CompanyId = @CompanyId
+          AND qua.UserId = @UserId
+          AND ISNULL(qua.IsActive, 1) = 1
+          AND ISNULL(rh.IsActive, 1) = 1;
+    ";
+
+            var result = await connection.QueryFirstOrDefaultAsync<MealRequestEligibilityDto>(
+                sql,
+                new { CompanyId = companyId, UserId = userId }
+            );
+
+            if (result == null || result.MinFromDate == null || result.MaxToDate == null)
+            {
+                return new MealRequestEligibilityDto
+                {
+                    IsAllowed = false,
+                    Message = "No order found for your account. You cannot select a meal location.",
+                    MinFromDate = null,
+                    MaxToDate = null
+                };
+            }
+
+            return result;
+        }
     }
 }
